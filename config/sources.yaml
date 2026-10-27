@@ -1,0 +1,528 @@
+# 수집 원천 정의
+#
+# endpoint / service_id 가 비어 있으면 그 원천은 건너뜁니다.
+#   - 공공데이터포털: 마이페이지 > 오픈API > 해당 API 상세 > End Point + 상세기능 오퍼레이션
+#   - 농식품 빅데이터 포털: 데이터 상세 > OpenAPI 탭 샘플 URL 의 서비스ID (Grid_... 형태)
+#
+# map: 표준 컬럼 ← 원천 컬럼 후보(앞에서부터 먼저 있는 것을 씀, 대소문자 무시)
+#      `python -m app.cli probe <id>` 로 실제 필드명을 본 뒤 맨 앞에 추가하면 됩니다.
+# fixed: 모든 행에 넣을 고정값
+# refresh: 기대 갱신 주기(daily/weekly/monthly/yearly/manual). 2배 넘게 지나면 화면에 '지연' 표시
+# coords: x/y 후보 + 원천 좌표계(EPSG). 4326 이면 x=경도, y=위도.
+
+sources:
+
+  # ── 농식품 빅데이터 포털 (data.mafra.go.kr) ─────────────────────────────
+  # 서비스 ID·필드는 2026-10-26 포털 상세 페이지에서 확인. 호출은 MAFRA_KEY 로.
+  # group: core = 기본 수집(run.sh), extra = 필요할 때 `collect group:extra`
+  # 데이터 시점(2026-10-26 첫 수집 기준): 가축 질병 발생 정보 1995-06 ~ 2026-10-22(현행),
+  #   질병발생 통계 ~2024-12, 브루셀라 이동제한 ~2016. 야생조류·멧돼지 검출은 manual_events 로 보완.
+
+  - id: mafra_disease_outbreak
+    title: 가축 질병 발생 정보
+    title_en: Livestock disease outbreaks
+    refresh: monthly
+    group: core
+    provider: mafra
+    service_id: Grid_20151204000000000316_1
+    target: event
+    fixed: {kind: outbreak}
+    addr_from: [FARM_LOCPLC]
+    map:
+      date: [OCCRRNC_DE]
+      disease: [LKNTS_NM]
+      species: [LVSTCKSPC_NM]
+      subspecies: [LVSTCKSPC_NM]
+      place: [FARM_LOCPLC]          # 리 단위 소재지 (농장명은 화면에 노출하지 않음)
+      legal_code: [FARM_LOCPLC_LEGALDONG_CODE]
+      heads: [OCCRRNC_LVSTCKCNT]
+      note: [DGNSS_ENGN_NM]
+    uid_from: [ICTSD_OCCRRNC_NO]
+    geocode: true                   # place 주소 → 브이월드 좌표 (python -m app.cli geocode)
+
+  - id: mafra_disease_stats
+    title: 질병발생 통계 (월·시도·질병)
+    title_en: Monthly disease statistics by province
+    refresh: monthly
+    group: core
+    provider: mafra
+    service_id: Grid_20220621000000000615_1
+    iterate: {param: QRANT_COMPT_MT, kind: month, from: "2018-01"}
+    target: region_stat
+    map:
+      as_of: [QRANT_COMPT_MT]
+      sido: [CTPRVN_NM]
+      species: [LVSTCK_KIND_CD_NM]
+    metrics:
+      - {metric: outbreak_farms, value: [OCCRRNC_FRMHS_CNT], suffix: [LVSTCK_KIND_CD_NM, DISE_CD_NM]}
+      - {metric: outbreak_heads, value: [OCCRRNC_CNT], suffix: [LVSTCK_KIND_CD_NM, DISE_CD_NM]}
+
+  - id: mafra_disinfection
+    title: 거점소독시설
+    title_en: Hub disinfection facilities
+    refresh: weekly
+    group: core
+    provider: mafra
+    service_id: Grid_20220621000000000618_1
+    target: facility
+    fixed: {kind: disinfection}
+    addr_from: [ADDR]
+    map:
+      name: [PSTN_DSNF_PLC_NM]
+      address: [ADDR]
+      status: [OPER_HR]
+    coords: {y: [LAT], x: [LOT], crs: "4326"}
+    uid_from: [name, address]
+
+  - id: mafra_farm_by_area
+    title: 지역별 농장 통계 (읍면동·축종)
+    title_en: Farms by area and species
+    refresh: monthly
+    group: core
+    provider: mafra
+    service_id: Grid_20220824000000000642_1
+    target: region_stat
+    map: {sido: [CTPRVN_NM], sigungu: [SIGUNGU_NM], emd: [EMD_NM], species: [LVSTCK_NM]}
+    metrics: [{metric: farms, value: [FARM_CO], suffix: [LVSTCK_NM]}]
+
+  - id: mafra_farm_by_scale
+    title: 읍면동 사육두수 (축종)
+    title_en: Heads kept by township and species
+    refresh: monthly
+    group: core
+    provider: mafra
+    service_id: Grid_20220823000000000637_1
+    target: region_stat
+    map: {sido: [CTPRVN_NM], sigungu: [SIGUNGU_NM], emd: [EMD_NM], species: [LVSTCK_NM]}
+    # BRD_HEAD_QY 는 규모 구간이 아니라 그 읍면동·축종의 사육두수 합계(FARM_CO 는 농장 수)
+    metrics: [{metric: heads, value: [BRD_HEAD_QY], suffix: [LVSTCK_NM]}]
+
+  - id: mafra_farm_by_status
+    title: 운영상태별 농장 통계
+    title_en: Farms by operating status
+    refresh: monthly
+    group: core
+    provider: mafra
+    service_id: Grid_20220823000000000638_1
+    target: region_stat
+    map: {sido: [CTPRVN_NM], sigungu: [SIGUNGU_NM], emd: [EMD_NM], species: [LVSTCK_NM]}
+    metrics: [{metric: farms_by_status, value: [FARM_CO], suffix: [LVSTCK_NM, OPER_STTUS_NM]}]
+
+  - id: mafra_farm_by_industry
+    title: 업종별 농장 통계
+    title_en: Farms by industry type
+    refresh: monthly
+    group: extra
+    provider: mafra
+    service_id: Grid_20220824000000000641_1
+    target: region_stat
+    map: {sido: [CTPRVN_NM], sigungu: [SIGUNGU_NM], emd: [EMD_NM], species: [LVSTCK_NM]}
+    metrics: [{metric: farms_by_industry, value: [FARM_CO], suffix: [LVSTCK_NM, INDUTY_CODE]}]
+
+  - id: mafra_farm_by_species
+    title: 축종별 농장 통계
+    title_en: Farms by species code
+    refresh: monthly
+    group: extra
+    provider: mafra
+    service_id: Grid_20220824000000000640_1
+    target: region_stat
+    map: {sido: [CTPRVN_NM], sigungu: [SIGUNGU_NM], emd: [EMD_NM], species: [LVSTCK_NM]}
+    metrics: [{metric: farms_by_species, value: [FARM_CO], suffix: [LVSTCK_NM]}]
+
+  - id: mafra_farm_by_disease_target
+    title: 대상질병별 농장 통계
+    title_en: Farms by target disease
+    refresh: monthly
+    group: core
+    provider: mafra
+    service_id: Grid_20220823000000000636_1
+    target: region_stat
+    map: {sido: [CTPRVN_NM], sigungu: [SIGUNGU_NM], emd: [EMD_NM], species: [LVSTCK_NM]}
+    metrics: [{metric: farms_target, value: [FARM_CO], suffix: [LVSTCK_NM, FARM_DISEASE_NM]}]
+
+  - id: mafra_livestock_heads
+    title: 가축 통계 데이터 (질병 대상 사육 두수)
+    title_en: Livestock head counts by target disease
+    refresh: monthly
+    group: core
+    provider: mafra
+    service_id: Grid_20220823000000000635_1
+    target: region_stat
+    map: {sido: [CTPRVN_NM], sigungu: [SIGUNGU_NM], emd: [EMD_NM], species: [LVSTCK_NM]}
+    metrics: [{metric: heads_target, value: [FARM_CO], suffix: [LVSTCK_NM, FARM_DISEASE_NM]}]
+
+  - id: mafra_slaughter_by_plant
+    title: 도축장별 축종별 도축실적 (월)
+    title_en: Monthly slaughter by plant and species
+    refresh: monthly
+    group: core
+    provider: mafra
+    service_id: Grid_20161216000000000428_1
+    iterate: {param: YM, kind: month, from: "2021-01"}
+    target: context_ts
+    map: {place: [SLAU_PLACE_NM], date: [YM], sido: [CTRD_NM]}
+    metrics: [{metric: slaughter_heads, value: [THSMON], suffix: [LVSTCKSPC_NM]}]
+
+  - id: mafra_slaughter_by_sido
+    title: 시도별 도축실적 (월)
+    title_en: Monthly slaughter by province
+    refresh: monthly
+    group: extra
+    provider: mafra
+    service_id: Grid_20161216000000000423_1
+    iterate: {param: YM, kind: month, from: "2021-01"}
+    target: region_stat
+    map: {sido: [CTRD_NM], as_of: [YM], species: [LVSTCKSPC_NM]}
+    metrics: [{metric: slaughter_heads, value: [THSMON], suffix: [LVSTCKSPC_NM]}]
+
+  - id: mafra_slaughter_chicken
+    title: 닭 품종별 도축실적 (월)
+    title_en: Monthly chicken slaughter by type
+    refresh: monthly
+    group: core
+    provider: mafra
+    service_id: Grid_20161216000000000426_1
+    iterate: {param: YM, kind: month, from: "2021-01"}
+    target: context_ts
+    fixed: {place: 전국}
+    map: {date: [YM]}
+    metrics: [{metric: slaughter_chicken, value: [THSMON], suffix: [DETAIL_LVSTCKSPC_NM]}]
+
+  - id: mafra_slaughter_cattle
+    title: 소 품종별 암수별 도축실적 (월)
+    title_en: Monthly cattle slaughter by breed and sex
+    refresh: monthly
+    group: extra
+    provider: mafra
+    service_id: Grid_20161216000000000425_1
+    iterate: {param: YM, kind: month, from: "2021-01"}
+    target: context_ts
+    fixed: {place: 전국}
+    map: {date: [YM]}
+    metrics: [{metric: slaughter_cattle, value: [THSMON], suffix: [DETAIL_LVSTCKSPC_NM]}]
+
+  - id: mafra_slaughter_species_sex
+    title: 축종별 암수별 도축실적 (월)
+    title_en: Monthly slaughter by species and sex
+    refresh: monthly
+    group: extra
+    provider: mafra
+    service_id: Grid_20161216000000000424_1
+    iterate: {param: YM, kind: month, from: "2021-01"}
+    target: context_ts
+    fixed: {place: 전국}
+    map: {date: [YM]}
+    metrics: [{metric: slaughter_by_sex, value: [THSMON], suffix: [LVSTCKSPC_NM]}]
+
+  - id: mafra_live_weight
+    title: 축종별 생체중량 (월)
+    title_en: Monthly live weight by species
+    refresh: monthly
+    group: extra
+    provider: mafra
+    service_id: Grid_20161216000000000427_1
+    iterate: {param: YM, kind: month, from: "2021-01"}
+    target: context_ts
+    fixed: {place: 전국}
+    map: {date: [YM]}
+    metrics: [{metric: live_weight_avg, value: [PYEONGARMY], suffix: [LVSTCKSPC_NM]}]
+
+  - id: mafra_brucella_restriction
+    title: 소 브루셀라 이동제한 (연·읍면동)
+    title_en: Cattle brucellosis movement restrictions
+    refresh: yearly
+    group: extra
+    provider: mafra
+    service_id: Grid_20151028000000000250_1
+    iterate: {param: YM, kind: year, from: 2014}
+    target: region_stat
+    fixed: {species: cattle}
+    map: {as_of: [YM], sido: [ADMINIST_ATPT_NM], sigungu: [ADMINIST_SIGNGU_NM], emd: [ADMINIST_EMD_NM]}
+    metrics: [{metric: brucella_restricted_farms, value: [MVMN_LMTT_FRMHS_CO]}]
+
+  - id: mafra_brucella_test
+    title: 소 브루셀라 검사결과 (일·읍면동, 약 35만 건)
+    title_en: Cattle brucellosis test results
+    refresh: monthly
+    group: extra
+    provider: mafra
+    service_id: Grid_20151028000000000249_1
+    target: region_stat
+    map: {as_of: [PRSEC_DE], species: [LVSTCKSPC_NM], sido: [ADMINIST_ATPT_NM], sigungu: [ADMINIST_SIGNGU_NM], emd: [ADMINIST_EMD_NM]}
+    metrics:
+      - {metric: brucella_tested_farms, value: [PRSEC_RESULT_FRMHS_CO]}
+      - {metric: brucella_positive_farms, value: [TRNNG_OCCRRNC_FRMHS_CO]}
+      - {metric: brucella_positive_heads, value: [TRNNG_OCCRRNC_LVSTCKCNT]}
+
+  - id: mafra_insurance_claims_sido
+    title: 시도별 사고원인 가축보험금 지급
+    title_en: Livestock insurance claims by province and cause
+    refresh: yearly
+    group: extra
+    provider: mafra
+    service_id: Grid_20161213000000000408_1
+    target: region_stat
+    map: {as_of: [YEAR], sido: [CTPRVN]}
+    metrics:
+      - {metric: insurance_claims, value: [PYMNT_CO], suffix: [ACDNT_TY]}
+      - {metric: insurance_amount, value: [INSRNC_AMOUNT], suffix: [ACDNT_TY]}
+
+  - id: mafra_insurance_enrol
+    title: 축종별 가축보험 가입
+    title_en: Livestock insurance enrolment by species
+    refresh: yearly
+    group: extra
+    provider: mafra
+    service_id: Grid_20161213000000000412_1
+    target: region_stat
+    map: {as_of: [YEAR], species: [LVSTCKSPC]}
+    metrics:
+      - {metric: insured_rate, value: [SBSCRB_RT], suffix: [LVSTCKSPC]}
+      - {metric: insured_heads, value: [SBSCRB_LVSTCK_CO], suffix: [LVSTCKSPC]}
+
+  - id: mafra_insurance_paid
+    title: 축종별 가축보험금 지급
+    title_en: Livestock insurance payouts by species
+    refresh: yearly
+    group: extra
+    provider: mafra
+    service_id: Grid_20161213000000000413_1
+    target: region_stat
+    map: {as_of: [YEAR], species: [LVSTCKSPC]}
+    metrics:
+      - {metric: insurance_payouts, value: [PYMNT_CO], suffix: [LVSTCKSPC]}
+      - {metric: insurance_loss_ratio, value: [DMAGE_RT], suffix: [LVSTCKSPC]}
+
+  - id: mafra_ai_technicians
+    title: 가축인공수정사 면허 현황 (연)
+    title_en: AI technician licences by area
+    refresh: yearly
+    group: extra
+    provider: mafra
+    service_id: Grid_20141222000000000129_1
+    iterate: {param: YEAR, kind: year, from: 2014}
+    target: region_stat
+    map: {as_of: [YEAR], sido: [CTPRVN], sigungu: [SIGNGU], emd: [EMD]}
+    metrics: [{metric: ai_technicians_active, value: [STTUS_NRMLT_CO]}]
+
+  - id: mafra_closure_support
+    title: 폐업지원 신청현황 (연)
+    title_en: Farm closure support applications
+    refresh: yearly
+    group: extra
+    provider: mafra
+    service_id: Grid_20151028000000000251_1
+    iterate: {param: SAUP_YEAR, kind: year, from: 2015}
+    target: region_stat
+    map: {as_of: [SAUP_YEAR], sido: [ADMINIST_ATPT_NM], sigungu: [ADMINIST_SIGNGU_NM], emd: [ADMINIST_EMD_NM]}
+    metrics: [{metric: closure_heads, value: [REQST_CO], suffix: [PRDLST_NM]}]
+
+  - id: mafra_manure_spray
+    title: 가축분뇨 살포 현황 (연)
+    title_en: Livestock manure spraying
+    refresh: yearly
+    group: extra
+    provider: mafra
+    service_id: Grid_20151028000000000247_1
+    iterate: {param: EXAMIN_YEAR, kind: year, from: 2015}
+    target: region_stat
+    map: {as_of: [EXAMIN_YEAR], sido: [ADMINIST_ATPT_NM], sigungu: [ADMINIST_SIGNGU_NM], emd: [ADMINIST_EMD_NM]}
+    metrics: [{metric: manure_spray_tons, value: [LIFER_SPRAY_QY]}]
+
+  - id: mafra_manure_by_crop
+    title: 가축분뇨 작물별 액비살포 (연)
+    title_en: Liquid manure spraying by crop
+    refresh: yearly
+    group: extra
+    provider: mafra
+    service_id: Grid_20151028000000000248_1
+    iterate: {param: EXAMIN_YEAR, kind: year, from: 2015}
+    target: region_stat
+    map: {as_of: [EXAMIN_YEAR], sido: [ADMINIST_ATPT_NM], sigungu: [ADMINIST_SIGNGU_NM], emd: [ADMINIST_EMD_NM]}
+    metrics: [{metric: manure_spray_tons, value: [SPRAY_QY], suffix: [CROPS_NM]}]
+
+  # 아래 2종은 필수 파라미터 DDLN_DT(마감일자)에 맞는 값을 아직 찾지 못해 꺼 둠 (enabled: false)
+  - id: mafra_vehicle_stats
+    title: 축산차량 통계 (시도·용도)
+    title_en: Registered livestock vehicles
+    refresh: monthly
+    group: extra
+    enabled: false
+    provider: mafra
+    service_id: Grid_20220621000000000617_1
+    iterate: {param: DDLN_DT, kind: list, values: ["20230920"]}
+    target: region_stat
+    map: {sido: [CTPRVN_NM], as_of: [DDLN_DT]}
+    metrics: [{metric: vehicles_total, value: [TOTCNT]}]
+
+  - id: mafra_facility_stats
+    title: 축산관계시설 등록 통계
+    title_en: Registered livestock-related facilities
+    refresh: monthly
+    group: extra
+    enabled: false
+    provider: mafra
+    service_id: Grid_20220621000000000616_1
+    iterate: {param: DDLN_DT, kind: list, values: ["20230920"]}
+    target: region_stat
+    map: {sido: [CTPRVN_NM], as_of: [DDLN_DT]}
+    metrics:
+      - {metric: facilities_total, value: [TOTCNT]}
+      - {metric: slaughterhouses, value: [SLAU_CO_FCLTY_SE]}
+      - {metric: poultry_slaughterhouses, value: [CH_CO_FCLTY_SE]}
+      - {metric: hatcheries, value: [HTCYS_CO_FCLTY_SE]}
+      - {metric: livestock_markets, value: [LVSTCK_MRKT_CO_FCLTY_SE]}
+
+  # 링크형(다른 기관 API로 연결) — 포털 키로는 호출 불가, 해당 기관에서 따로 신청:
+  #   한우 개체별/기간별 인공수정이력(hanwooai.co.kr), 소 및 쇠고기 개체정보·축산물DNA동일성검사·
+  #   계란등급판정·축산물등급판정확인서(축산물품질평가원, data.go.kr), 팜맵 기상·토양·병해충(data.go.kr)
+  #   동물등록 현황(반려동물)은 범위 밖이라 제외.
+
+  # ── 공공데이터포털 ─────────────────────────────────────────────
+  - id: mois_livestock_farming
+    title: 행정안전부 동물_가축사육업 (농장 좌표)
+    title_en: Livestock farming licences (MOIS, farm locations)
+    refresh: weekly
+    group: core
+    provider: datagokr
+    endpoint: https://apis.data.go.kr/1741000/livestock_farming_v2/info_v2
+    # 처음엔 영업 중(01)인 농장만 전부(약 10만 곳, 100건씩), 이후에는 갱신시점 이후 바뀐 것만(폐업·휴업 포함)
+    params: {returnType: json, "cond[SALS_STTS_CD::EQ]": "01"}
+    paging: {page: pageNo, size: numOfRows, per: 100}
+    incremental: {param: "cond[DAT_UPDT_PNT::GTE]", fmt: "%Y%m%d%H%M%S", overlap_days: 3, drop: ["cond[SALS_STTS_CD::EQ]"]}
+    target: facility
+    fixed: {kind: farm}
+    addr_from: [LOTNO_ADDR, ROAD_NM_ADDR]
+    map:
+      name: [BPLC_NM]
+      status: [SALS_STTS_NM, DTL_SALS_STTS_NM]
+      species: [PRMN_LSFBIZ_SPECS]
+      address: [LOTNO_ADDR, ROAD_NM_ADDR]
+      size: [LCTN_AREA]
+    coords: {x: [CRD_INFO_X], y: [CRD_INFO_Y], crs: "5174"}
+    uid_from: [MNG_NO, OPN_ATMY_GRP_CD]
+
+  - id: mois_ai_center
+    title: 행정안전부 동물_가축인공수정소
+    title_en: Artificial insemination centres (MOIS)
+    refresh: weekly
+    provider: datagokr
+    endpoint: https://apis.data.go.kr/1741000/artificial_insemination_centers/info   # 활용신청 승인 후 동작
+    params: {returnType: json}
+    paging: {page: pageNo, size: numOfRows, per: 100}
+    target: facility
+    fixed: {kind: ai_center, species: cattle}
+    map:
+      name: [BPLC_NM, bplcNm]
+      status: [DTL_SALS_STTS_NM, SALS_STTS_NM, dtlStateNm]
+      address: [ROAD_NM_ADDR, LOTNO_ADDR, rdnWhlAddr, siteWhlAddr]
+    coords: {x: [CRD_INFO_X, x], y: [CRD_INFO_Y, y], crs: "5174"}
+    uid_from: [MNG_NO, mgtNo, name, address]
+
+  - id: kma_asos_daily
+    title: 기상청 ASOS 일자료
+    title_en: KMA ASOS daily weather
+    refresh: daily
+    provider: kma_asos
+    endpoint: https://apis.data.go.kr/1360000/AsosDalyInfoService/getWthrDataList
+    # 전국 ASOS 관측소(위치는 app/stations.py). 지도에 기온 색 점으로 표시.
+    stations: {"90": 속초, "95": 철원, "98": 동두천, "100": 대관령, "101": 춘천, "105": 강릉, "108": 서울, "112": 인천, "114": 원주, "119": 수원, "127": 충주, "129": 서산, "131": 청주, "133": 대전, "135": 추풍령, "138": 포항, "140": 군산, "143": 대구, "146": 전주, "152": 울산, "155": 창원, "156": 광주, "159": 부산, "165": 목포, "168": 여수, "170": 완도, "174": 순천, "184": 제주, "189": 서귀포, "192": 진주, "201": 강화, "203": 이천, "211": 인제, "212": 홍천, "221": 제천, "226": 보은, "232": 천안, "235": 보령, "236": 부여, "238": 금산, "243": 부안, "244": 임실, "245": 정읍, "247": 남원, "260": 장흥, "261": 해남, "262": 고흥, "272": 영주, "273": 문경, "277": 영덕, "278": 의성, "279": 구미, "281": 영천, "284": 거창, "285": 합천, "288": 밀양, "289": 산청}
+    days: 60
+    target: context_ts
+
+  # 파일데이터(odcloud 자동변환 API). endpoint 는 포털 상세의 "오픈API" 탭 요청주소.
+  - id: qia_farm_entry
+    title: 검역본부 농장진입신고정보 (차량·업체 출입)
+    title_en: Farm entry reports (vehicles / crews)
+    refresh: yearly
+    group: core
+    provider: odcloud
+    endpoint: https://api.odcloud.kr/api/15154158/v1/uddi:48165a30-3927-48d4-8ccf-fe6adb6997f1
+    paging: {page: page, size: perPage, per: 1000}
+    target: contact
+    map:
+      farm_key: [농장명]
+      at: [진입일자]
+      at_time: [진입시간]
+      purpose: [농장 진입목적]
+      party: [업체명]
+      kind: [구분]
+      address: [농장기본 주소]
+      species: [농장 사육축_품종]
+    uid_from: [farm_key, at, party]
+
+  - id: kahis_vehicle_visit
+    title: KAHIS 축산차량 시설방문 정보 (별도 수집기 ./visits.sh)
+    title_en: Livestock vehicle facility visits (KAHIS, separate collector ./visits.sh)
+    refresh: daily
+    group: visits            # 웹 서버 자동 수집에서 제외 — ./visits.sh 가 따로 받음
+    provider: kahis_visit
+    target: vehicle_visit
+    # 공공데이터포털 '축산차량 방문정보'(LINK형) 공개 조회 화면. 시도 단위로 하루씩, 요청 사이 2초 쉼.
+    # 시설명·차량번호는 원본에서 가려져 있어 리 단위 소재지·시설구분·축종·차량유형별 횟수로 저장.
+
+  - id: qia_crews
+    title: 검역본부 백신접종팀·상하차반 업체
+    title_en: Vaccination teams and loading crews
+    refresh: yearly
+    group: core
+    provider: odcloud
+    endpoint: https://api.odcloud.kr/api/15154176/v1/uddi:d1736ab2-287d-470e-a2a1-cd0b4549a581
+    paging: {page: page, size: perPage, per: 1000}
+    target: facility
+    map:
+      kind: [구분]
+      name: [업체명]
+      address: [업체기본 주소]
+      species: [축_품종명]
+    uid_from: [name, address, kind]
+
+  - id: kahis_scale_broiler
+    title: 가축위생방역지원본부 시군별 육계 사육규모
+    title_en: Broiler farm scale by county
+    refresh: yearly
+    group: core
+    provider: odcloud
+    endpoint: https://api.odcloud.kr/api/15147324/v1/uddi:97909123-0405-4014-8263-e1afabc64525
+    paging: {page: page, size: perPage, per: 1000}
+    target: region_stat
+    fixed: {species: poultry}
+    melt: true            # 규모 구간 컬럼(호수/수수)을 metric 행으로 펼침
+    melt_skip: [순번, 품종]
+    map:
+      sido: [시도]
+      sigungu: [시군]
+      as_of: [년도]
+
+  # ── 파일(API 없음) ───────────────────────────────────────────
+  - id: manual_events
+    title: 수기 입력 이벤트(보도자료, 발생현황 정보공개)
+    title_en: Manual events (press releases, disclosures)
+    refresh: manual
+    provider: file
+    path: data/files/manual_events.csv
+    target: event
+    map:
+      kind: [kind]
+      disease: [disease]
+      species: [species]
+      subspecies: [subspecies]
+      date: [date]
+      sampled: [sampled]
+      sido: [sido]
+      sigungu: [sigungu]
+      place: [place]
+      heads: [heads]
+      note: [note]
+    coords: {y: [lat], x: [lon], crs: "4326"}
+    uid_from: [kind, date, place, disease]
+
+  - id: migratory_birds
+    title: 검역본부 철새 이동 정보 (위치추적 북상 기록)
+    title_en: Migratory bird tracking (QIA, northward departures)
+    refresh: yearly
+    provider: birds
+    target: bird_track
+    # data/files 에 '철새' 가 들어간 csv/xlsx 를 넣으면 서버 시작 때(또는 '수집') bird_track 으로 변환:
+    # 출발(국내)·도착(국외) 지명 → 좌표(app/birds.py 지명 사전) → 거리·방위각·16방위·시계 방향

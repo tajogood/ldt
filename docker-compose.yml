@@ -1,0 +1,26 @@
+# 가축질병 추적 시스템 전용 PostgreSQL
+# 이미 쓰고 있는 woori-db(5432)와 겹치지 않도록 5433 포트를 씁니다.
+#   docker compose up -d
+#   .env: DATABASE_URL=postgresql+psycopg://ldt:ldt@localhost:5433/ldt
+services:
+  ldt-db:
+    image: postgres:16
+    container_name: ldt-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ldt
+      POSTGRES_PASSWORD: ldt
+      POSTGRES_DB: ldt
+      TZ: Asia/Seoul
+    ports:
+      - "5433:5432"
+    volumes:
+      - ldt-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ldt -d ldt"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  ldt-pgdata:

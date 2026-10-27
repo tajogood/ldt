@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>가축질병 추적</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<link rel="stylesheet" href="/static/style.css">
+<script src="/config.js"></script>
+<script src="/static/i18n.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+</head>
+<body>
+<header class="top">
+  <div class="brand">
+    <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></svg>
+    <span data-i18n="app.title">가축질병 추적</span>
+  </div>
+  <nav aria-label="menu" id="nav">
+    <button data-view="dash" class="on" data-i18n="nav.dash">통합 상황판</button>
+    <button data-view="track" data-i18n="nav.track">발생 추적</button>
+    <button data-view="corr" data-i18n="nav.corr">연관 분석</button>
+    <button data-view="hist" data-i18n="nav.hist">역대 분석</button>
+    <button data-view="news"><span data-i18n="nav.news">뉴스·공지</span> <b class="badge" id="news-badge" hidden></b></button>
+    <button data-view="explore" data-i18n="nav.explore">데이터 조회</button>
+    <button data-view="data" data-i18n="nav.data">데이터 관리</button>
+  </nav>
+  <div id="alert" class="alert" hidden></div>
+  <div class="lang" role="group" aria-label="Language">
+    <button data-lang="ko" aria-pressed="true">한국어</button>
+    <button data-lang="en" aria-pressed="false">English</button>
+  </div>
+</header>
+
+<div class="bar">
+  <div role="tablist" aria-label="species" id="species"></div>
+  <div id="diseases" class="chips"></div>
+  <div id="last-collect" class="muted last"></div>
+</div>
+
+<main>
+  <!-- 1. 통합 상황판 -->
+  <section id="view-dash" class="view">
+    <div class="kpis" id="kpis"></div>
+    <div class="fresh" id="fr-kpis"></div>
+    <div class="row">
+      <div class="card grow">
+        <div class="card-h"><h2 data-i18n="dash.map">현황 지도 — 농장 분포 × 발생 × 방역대</h2>
+          <span class="inline"><span class="muted" id="dash-cur"></span></span></div>
+        <div class="layers" id="dash-layers"></div>
+        <div class="legend-row" id="dash-legend"></div>
+        <div class="legend-row" id="wx-legend"></div>
+        <div class="legend-row" id="bird-legend"></div>
+        <div class="map" id="map-dash"></div>
+        <div class="muted small" id="dash-note"></div>
+        <div class="fresh" id="fr-risk"></div>
+      </div>
+      <div class="col side">
+        <div class="card"><div class="card-h"><h2 data-i18n="dash.news">최근 뉴스·공지</h2><button class="small" id="dash-news-more" data-i18n="nv.more">더 보기</button></div><ul class="feed news" id="dash-news"></ul></div>
+        <div class="card"><div class="card-h"><h2 data-i18n="dash.feed">최근 이벤트</h2></div><ul class="feed" id="feed"></ul></div>
+        <div class="card"><div class="card-h"><h2 data-i18n="dash.top">위험 상위 시군</h2></div><div class="muted small" id="risk-missing"></div>
+          <table class="tbl"><thead><tr><th data-i18n="th.rank">순위</th><th data-i18n="th.region">시군</th><th data-i18n="th.score">점수</th><th data-i18n="th.factor">주 요인</th></tr></thead><tbody id="risk-top"></tbody></table>
+        </div>
+      </div>
+    </div>
+    <div class="card"><div class="card-h"><h2 data-i18n="dash.weekly">주간 추이 — 농장 발생 vs 야생 검출</h2></div>
+      <div class="chart"><canvas id="chart-weekly"></canvas></div><div class="fresh" id="fr-weekly"></div></div>
+  </section>
+
+  <!-- 2. 발생 추적 -->
+  <section id="view-track" class="view" hidden>
+    <div class="card">
+      <div class="card-h"><h2 data-i18n="tl.title">시즌 재생 · 확산 추적</h2>
+        <div class="inline">
+          <label><span data-i18n="tl.season">시즌</span> <select id="tl-season"></select></label>
+          <label><span data-i18n="tl.disease">질병</span> <select id="tl-disease"></select></label>
+        </div></div>
+      <div class="player">
+        <button class="play" id="tl-play" aria-label="play">▶</button>
+        <input type="range" id="tl-slider" min="0" max="365" value="365" aria-label="timeline">
+        <b id="tl-date" class="tl-date"></b>
+        <label class="inline"><span data-i18n="tl.window">표시</span>
+          <select id="tl-window"><option value="3">3d</option><option value="7" selected>7d</option><option value="14">14d</option><option value="30">30d</option></select></label>
+        <label class="inline"><span data-i18n="tl.speed">속도</span>
+          <select id="tl-speed"><option value="1" selected>1×</option><option value="2">2×</option><option value="5">5×</option></select></label>
+        <label class="inline"><input type="checkbox" id="tl-skip" checked> <span data-i18n="tl.skip">빈 기간 건너뛰기</span></label>
+      </div>
+      <div class="row nogap">
+        <div class="grow"><div class="map tall" id="map-track"></div></div>
+        <aside class="side" id="detail"><p class="muted pad" data-i18n="track.pick">지도나 그래프에서 발생을 선택하세요.</p></aside>
+      </div>
+      <div class="pad tl-sum" id="tl-sum"></div>
+      <div class="fresh" id="fr-track"></div>
+    </div>
+    <div class="row">
+      <div class="card grow">
+        <div class="card-h"><h2 data-i18n="tl.dist">시간–거리 확산</h2>
+          <div class="inline"><select id="tl-dmode"><option value="prev" data-i18n="tl.dprev">가장 가까운 선행 발생까지(km)</option><option value="index" data-i18n="tl.dindex">시즌 첫 발생(지표 사례)으로부터(km)</option></select></div></div>
+        <div class="chart tall"><canvas id="chart-tdist"></canvas></div>
+        <p class="pad muted small" id="tl-dist-note"></p>
+      </div>
+      <div class="card grow">
+        <div class="card-h"><h2 data-i18n="tl.curve">시즌 발생 곡선</h2></div>
+        <div class="chart tall"><canvas id="chart-curve"></canvas></div>
+        <p class="pad muted small" data-i18n="tl.curvenote">주별 신규 발생(막대)과 누적(선). 세로선은 재생 위치입니다.</p>
+      </div>
+    </div>
+    <div class="card"><div class="card-h"><h2 data-i18n="track.list">이벤트 목록</h2><span class="muted" id="tl-listnote"></span></div>
+      <div class="scroll"><table class="tbl"><thead><tr><th data-i18n="th.date">일자</th><th data-i18n="th.kind">유형</th><th data-i18n="th.disease">질병</th><th data-i18n="th.sub">세부 축종</th><th data-i18n="th.place">장소</th><th data-i18n="th.prev">선행 발생</th><th data-i18n="th.cluster">묶음</th></tr></thead><tbody id="ev-list"></tbody></table></div>
+    </div>
+  </section>
+
+  <!-- 3. 연관 분석 -->
+  <section id="view-corr" class="view" hidden>
+    <div class="row">
+      <div class="card grow"><div class="card-h"><h2 data-i18n="corr.wildfarm">야생 검출 vs 농장 발생 (주간)</h2></div><div class="chart"><canvas id="chart-corr"></canvas></div><div class="fresh" id="fr-corr"></div></div>
+      <div class="card grow"><div class="card-h"><h2 data-i18n="corr.wx">기상 — 최근 60일</h2>
+        <label class="inline"><span data-i18n="corr.stn">관측소</span> <select id="stn"></select></label></div>
+        <div class="chart"><canvas id="chart-wx"></canvas></div><div class="fresh" id="fr-wx"></div></div>
+    </div>
+    <div class="row">
+      <div class="card grow"><div class="card-h"><h2 data-i18n="corr.knox">시공간 연쇄 (Knox)</h2>
+        <span class="muted" data-i18n="corr.knoxhint">20km · 14일 이내 발생 쌍</span></div><div id="knox" class="pad"></div><div class="fresh" id="fr-knox"></div></div>
+      <div class="card grow"><div class="card-h"><h2 data-i18n="corr.riskbars">위험지수 요인 분해 · 상위 10개 시군</h2></div><div class="chart"><canvas id="chart-risk"></canvas></div><div class="fresh" id="fr-riskbars"></div></div>
+    </div>
+    <div class="card"><div class="card-h"><h2 data-i18n="corr.visits">축산차량 시설방문 — 최근 60일 (차량유형별, 일별)</h2>
+      <span class="muted" id="visit-cov"></span></div><div class="chart"><canvas id="chart-visits"></canvas></div><div class="fresh" id="fr-visits"></div></div>
+  </section>
+
+  <!-- 역대 분석: 여러 시즌·연도에 걸친 패턴 -->
+  <section id="view-hist" class="view" hidden>
+    <div class="card"><div class="card-h"><h2 data-i18n="h.title">역대 분석</h2>
+      <div class="inline"><label class="inline"><span data-i18n="tl.disease">질병</span> <select id="h-disease"></select></label></div></div>
+      <p class="pad muted small" style="margin:0" data-i18n="h.intro">수집된 전체 발생 기록으로 시즌·지역·계절 패턴을 비교합니다. 가금은 9월~이듬해 8월, 돼지·소는 달력 연도가 한 시즌입니다.</p></div>
+    <div class="card"><div class="card-h"><h2 data-i18n="h.seasons">시즌별 누적 발생 곡선</h2><span class="muted" id="h-s-note"></span></div>
+      <div class="chart tall"><canvas id="chart-h-seasons"></canvas></div>
+      <div class="scroll"><table class="tbl" id="h-s-tbl"></table></div><div class="fresh" id="fr-h"></div></div>
+    <div class="card"><div class="card-h"><h2 data-i18n="h.network">시즌 전파 연결망 비교</h2>
+      <span class="inline"><select id="net-a"></select> <span class="muted">vs</span> <select id="net-b"></select></span></div>
+      <div class="net-grid">
+        <div><div class="map net" id="map-net-a"></div><div class="muted small pad-s" id="net-a-sum"></div></div>
+        <div><div class="map net" id="map-net-b"></div><div class="muted small pad-s" id="net-b-sum"></div></div>
+      </div></div>
+    <div class="row">
+      <div class="card grow"><div class="card-h"><h2 data-i18n="bird.rose">철새 북상 방향 분포</h2><span class="muted small" id="bird-sum"></span></div>
+        <div class="chart"><canvas id="chart-bird-rose"></canvas></div></div>
+      <div class="card grow"><div class="card-h"><h2 data-i18n="bird.timing">철새 북상 시기 (연도별)</h2></div>
+        <div class="chart"><canvas id="chart-bird-time"></canvas></div></div>
+    </div>
+    <div class="row">
+      <div class="card grow"><div class="card-h"><h2 data-i18n="h.months">연도 × 월 발생 (계절성)</h2></div><div class="scroll pad-s"><table class="heat" id="h-months"></table></div></div>
+      <div class="card grow"><div class="card-h"><h2 data-i18n="h.diseases">질병별 연도 추이</h2><span class="muted small" data-i18n="h.diseases.note">이 축종의 모든 질병</span></div><div class="scroll pad-s"><table class="heat" id="h-diseases"></table></div></div>
+    </div>
+    <div class="card"><div class="card-h"><h2 data-i18n="h.regions">반복 발생 지역 — 시군 × 시즌</h2><span class="muted small" data-i18n="h.regions.note">여러 시즌에 걸쳐 발생한 시군 순(상위 30)</span></div>
+      <div class="scroll pad-s"><table class="heat" id="h-regions"></table></div></div>
+    <div class="row">
+      <div class="card grow"><div class="card-h"><h2 data-i18n="h.repeats">여러 시즌에 반복 발생한 마을(리)</h2><span class="muted" id="h-r-note"></span></div>
+        <div class="scroll" style="max-height:420px"><table class="tbl" id="h-repeats"></table></div></div>
+      <div class="card grow"><div class="card-h"><h2 data-i18n="h.visits">발생 전 21일 축산차량 방문 — 발생 리 vs 같은 날 다른 리</h2></div>
+        <div class="pad-s muted small" id="h-v-note"></div><div class="chart"><canvas id="chart-h-visits"></canvas></div>
+        <p class="pad muted small" style="margin:0" data-i18n="h.visits.caveat">배율 1보다 크면 발생 직전 그 리에 그 유형 차량이 평소보다 많이 드나든 것입니다. 관찰된 연관일 뿐 원인은 아니며, 농장이 많은 지역은 원래 방문이 많습니다.</p></div>
+    </div>
+  </section>
+
+  <!-- 뉴스·공지 -->
+  <section id="view-news" class="view" hidden>
+    <div class="card"><div class="card-h"><h2 data-i18n="nv.title">뉴스·공지 모니터링</h2>
+      <span class="muted small" id="nv-status"></span></div>
+      <div class="xp-filters">
+        <div class="seg" id="nv-kind"><button data-k="" class="on" data-i18n="nv.all">전체</button><button data-k="news" data-i18n="nv.news">뉴스</button><button data-k="notice" data-i18n="nv.notice">농식품부 공지·보도</button></div>
+        <input id="nv-q" type="search" data-i18n-ph="nv.search" placeholder="제목 검색">
+        <label class="inline"><input type="checkbox" id="nv-rel" checked> <span data-i18n="nv.relevant">방역 관련만</span></label>
+        <button class="small" id="nv-refresh" data-i18n="nv.refresh">지금 확인</button>
+      </div>
+      <div class="xp-chart"><canvas id="chart-news"></canvas></div>
+      <ul class="news-list" id="nv-list"></ul>
+      <div class="xp-pager"><span class="muted" id="nv-count"></span><span><button class="small" id="nv-prev">‹</button><button class="small" id="nv-next">›</button></span></div>
+    </div>
+  </section>
+
+  <!-- 4. 데이터 조회: 원천(API)별 수집 데이터 -->
+  <section id="view-explore" class="view" hidden>
+    <div class="xp">
+      <aside class="card xp-side">
+        <div class="pad-s"><input id="xp-find" type="search" data-i18n-ph="xp.find" placeholder="원천 찾기"></div>
+        <label class="xp-empty muted small"><input type="checkbox" id="xp-hide-empty"> <span data-i18n="xp.hideempty">수집된 것만</span></label>
+        <div id="xp-list" class="xp-list"></div>
+      </aside>
+      <div class="xp-main">
+        <div class="card" id="xp-card">
+          <div class="card-h">
+            <div><h2 id="xp-title" data-i18n="xp.pick">왼쪽에서 데이터를 고르세요</h2><div class="muted small" id="xp-meta"></div></div>
+            <div class="seg" id="xp-tabs" role="tablist">
+              <button data-t="table" class="on" data-i18n="xp.t.table">데이터</button>
+              <button data-t="raw" data-i18n="xp.t.raw">원본(API 응답)</button>
+              <button data-t="profile" data-i18n="xp.t.profile">항목 요약</button>
+            </div>
+          </div>
+          <div id="xp-body" hidden>
+            <div class="xp-filters">
+              <input id="xp-q" type="search" data-i18n-ph="data.search" placeholder="검색">
+              <span class="xp-dates"><input id="xp-from" type="date"> ~ <input id="xp-to" type="date"></span>
+              <span id="xp-facets" class="xp-facets"></span>
+              <button class="small" id="xp-reset" data-i18n="xp.reset">필터 초기화</button>
+              <a class="small btn" id="xp-csv" href="#" data-i18n="xp.csv">CSV 내려받기</a>
+            </div>
+            <div class="xp-chart" id="xp-chart-wrap"><canvas id="chart-xp"></canvas></div>
+            <div class="xp-pager">
+              <span class="muted" id="xp-count"></span>
+              <span><select id="xp-size"><option>50</option><option selected>100</option><option>300</option><option>1000</option></select>
+              <button class="small" id="xp-prev">‹</button><button class="small" id="xp-next">›</button></span>
+            </div>
+            <div class="scroll xp-scroll"><table class="tbl xp-tbl" id="xp-tbl"></table></div>
+            <div class="fresh" id="fr-xp"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="xp-drawer" id="xp-drawer" hidden>
+      <div class="card-h"><h2 id="xp-d-title"></h2><button class="small" id="xp-d-close" aria-label="close">✕</button></div>
+      <div class="pad" id="xp-d-body"></div>
+    </div>
+  </section>
+
+  <!-- 5. 데이터 관리 -->
+  <section id="view-data" class="view" hidden>
+    <div class="card"><div class="card-h"><h2 data-i18n="auto.title">자동 수집</h2>
+        <div class="inline"><span id="auto-state" class="muted"></span> <button class="small" id="auto-run" data-i18n="auto.run">지금 최신화</button></div></div>
+      <div class="pad muted" id="auto-hist"></div>
+    </div>
+    <div class="card"><div class="card-h"><h2 data-i18n="data.status">수집 상태 · 데이터 최신성</h2><span class="muted" id="tbl-counts"></span></div>
+      <div class="scroll"><table class="tbl"><thead><tr><th data-i18n="th.source">원천</th><th data-i18n="th.target">대상</th><th data-i18n="th.refresh">갱신 주기</th><th data-i18n="th.period">데이터 기간</th><th data-i18n="th.lastok">최근 수집</th><th data-i18n="th.result">결과</th><th></th></tr></thead><tbody id="src-list"></tbody></table></div>
+    </div>
+    <div class="card" id="browse" hidden>
+      <div class="card-h"><h2 id="browse-title"></h2>
+        <div class="inline"><input id="browse-q" type="search" data-i18n-ph="data.search" placeholder="검색"> <span class="muted" id="browse-count"></span>
+          <button class="small" id="browse-prev">‹</button><button class="small" id="browse-next">›</button></div></div>
+      <div class="scroll tall"><table class="tbl" id="browse-tbl"></table></div>
+      <div class="fresh" id="fr-browse"></div>
+    </div>
+    <div class="card"><div class="card-h"><h2 data-i18n="data.form">이벤트 직접 입력</h2><span class="muted" data-i18n="data.formhint">보도자료·발생현황 정보공개(HWP/PDF)처럼 API가 없는 건</span></div>
+      <form id="ev-form" class="form">
+        <label><span data-i18n="f.kind">유형</span><select name="kind" id="f-kind"></select></label>
+        <label><span data-i18n="f.disease">질병</span><input name="disease" required placeholder="HPAI, ASF, FMD, LSD …"></label>
+        <label><span data-i18n="f.species">축종</span><select name="species" id="f-species"></select></label>
+        <label><span data-i18n="f.sub">세부 축종</span><input name="subspecies"></label>
+        <label><span data-i18n="f.date">확진일</span><input name="date" type="date" required></label>
+        <label><span data-i18n="f.sampled">시료 채취일</span><input name="sampled" type="date"></label>
+        <label><span data-i18n="f.sido">시도</span><input name="sido"></label>
+        <label><span data-i18n="f.sigungu">시군구</span><input name="sigungu"></label>
+        <label><span data-i18n="f.place">장소</span><input name="place"></label>
+        <label><span data-i18n="f.lat">위도</span><input name="lat" inputmode="decimal"></label>
+        <label><span data-i18n="f.lon">경도</span><input name="lon" inputmode="decimal"></label>
+        <label><span data-i18n="f.heads">두수</span><input name="heads" inputmode="numeric"></label>
+        <label class="wide"><span data-i18n="f.note">비고·출처</span><input name="note"></label>
+        <div class="wide"><button type="submit" class="primary" data-i18n="f.save">저장</button> <span id="ev-msg" class="muted"></span></div>
+      </form>
+    </div>
+  </section>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>

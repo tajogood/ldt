@@ -1,0 +1,3 @@
+kind,disease,species,subspecies,date,sampled,sido,sigungu,place,lat,lon,heads,note
+wild_detection,HPAI,wild_bird,야생조류 분변,2026-10-20,2026-10-12,전남광주,순천시,순천만,34.8860,127.5090,,H5형 확진. N형 정밀검사 3~5일. 좌표는 순천만습지 대표점(근사). 출처: 농식품부·기후부 보도참고자료 2026.10.20
+alert,HPAI,poultry,,2026-10-20,,,,전국,,,,"위기경보 주의→심각 상향, 중앙사고수습본부 가동. 출처: 농식품부 보도참고자료 2026.10.20"
