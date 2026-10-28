@@ -191,9 +191,29 @@ li.new a::before{content:"●";color:#B42318;font-size:9px;margin-right:5px;vert
 button.toggle{height:32px;padding:0 12px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;font-size:13px}
 button.toggle.on{background:#2a78d6;border-color:#2a78d6;color:#fff;font-weight:600}
 
-/* 대시보드: 지도는 화면 높이에 맞춰 커지고, 뉴스·이벤트는 지도 아래 50:50 */
-.map.dash{height:clamp(520px,64vh,960px)}
-.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:stretch}
-.pair>.card{min-width:0}
-.pair .feed{max-height:420px}
-@media (max-width:900px){.pair{grid-template-columns:1fr}}
+/* 대시보드 배치 — 화면 폭에 따라 3단계
+   좁음(<1100)  : 한 줄씩
+   중간(1100~)  : 지도 | 위험 시군 / 뉴스 | 이벤트 / 주간 추이
+   넓음(1600~)  : 지도(왼쪽 절반, 화면 높이) | 위험·주간 추이 | 뉴스·이벤트 — 스크롤 없이 한 화면 */
+.dash-grid{display:grid;gap:16px;grid-template-columns:minmax(0,1fr);
+  grid-template-areas:"map" "risk" "news" "feed" "weekly"}
+.g-map{grid-area:map}.g-risk{grid-area:risk}.g-news{grid-area:news}.g-feed{grid-area:feed}.g-weekly{grid-area:weekly}
+.dash-grid>.card{min-width:0;display:flex;flex-direction:column;min-height:0}
+.dash-grid .feed{max-height:420px}
+.dash-grid .scroll{overflow:auto;min-height:0}
+.map.dash{height:clamp(480px,70vh,900px)}
+@media (min-width:1100px){
+  .dash-grid{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 360px;
+    grid-template-areas:"map map risk" "news feed risk" "weekly weekly weekly"}
+}
+@media (min-width:1600px){
+  main{max-width:none}
+  .dash-grid{grid-template-columns:minmax(0,1.25fr) minmax(0,.85fr) minmax(0,.9fr);
+    grid-template-rows:minmax(0,1fr) minmax(0,1fr);
+    grid-template-areas:"map risk news" "map weekly feed";
+    height:clamp(720px,calc(100vh - 150px),1400px)}
+  .dash-grid .map.dash{height:auto;flex:1 1 auto;min-height:360px}
+  .dash-grid .feed{flex:1 1 auto;min-height:0;max-height:none}
+  .dash-grid .scroll{flex:1 1 auto}
+  .dash-grid .g-weekly .chart{flex:1 1 auto;height:auto;min-height:200px}
+}
