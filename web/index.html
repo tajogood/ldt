@@ -45,20 +45,24 @@
     <div class="kpis" id="kpis"></div>
     <div class="fresh" id="fr-kpis"></div>
     <div class="row">
-      <div class="card grow">
-        <div class="card-h"><h2 data-i18n="dash.map">현황 지도 — 농장 분포 × 발생 × 방역대</h2>
-          <span class="inline"><span class="muted" id="dash-cur"></span></span></div>
-        <div class="layers" id="dash-layers"></div>
-        <div class="legend-row" id="dash-legend"></div>
-        <div class="legend-row" id="wx-legend"></div>
-        <div class="legend-row" id="bird-legend"></div>
-        <div class="map" id="map-dash"></div>
-        <div class="muted small" id="dash-note"></div>
-        <div class="fresh" id="fr-risk"></div>
+      <div class="col grow">
+        <div class="card dash-map-card">
+          <div class="card-h"><h2 data-i18n="dash.map">현황 지도 — 농장 분포 × 발생 × 방역대</h2>
+            <span class="inline"><span class="muted" id="dash-cur"></span></span></div>
+          <div class="layers" id="dash-layers"></div>
+          <div class="legend-row" id="dash-legend"></div>
+          <div class="legend-row" id="wx-legend"></div>
+          <div class="legend-row" id="bird-legend"></div>
+          <div class="map dash" id="map-dash"></div>
+          <div class="muted small" id="dash-note"></div>
+          <div class="fresh" id="fr-risk"></div>
+        </div>
+        <div class="pair">
+          <div class="card"><div class="card-h"><h2 data-i18n="dash.news">최근 뉴스·공지</h2><button class="small" id="dash-news-more" data-i18n="nv.more">더 보기</button></div><ul class="feed news" id="dash-news"></ul></div>
+          <div class="card"><div class="card-h"><h2 data-i18n="dash.feed">최근 이벤트</h2></div><ul class="feed" id="feed"></ul></div>
+        </div>
       </div>
       <div class="col side">
-        <div class="card"><div class="card-h"><h2 data-i18n="dash.news">최근 뉴스·공지</h2><button class="small" id="dash-news-more" data-i18n="nv.more">더 보기</button></div><ul class="feed news" id="dash-news"></ul></div>
-        <div class="card"><div class="card-h"><h2 data-i18n="dash.feed">최근 이벤트</h2></div><ul class="feed" id="feed"></ul></div>
         <div class="card"><div class="card-h"><h2 data-i18n="dash.top">위험 상위 시군</h2></div><div class="muted small" id="risk-missing"></div>
           <table class="tbl"><thead><tr><th data-i18n="th.rank">순위</th><th data-i18n="th.region">시군</th><th data-i18n="th.score">점수</th><th data-i18n="th.factor">주 요인</th></tr></thead><tbody id="risk-top"></tbody></table>
         </div>

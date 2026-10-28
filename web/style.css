@@ -23,7 +23,7 @@ nav button.on{background:var(--teal-bg);color:var(--teal);font-weight:700}
 #species button[aria-selected=true]{background:var(--ink);color:var(--card);border-color:var(--ink);font-weight:700}
 .chips{display:flex;gap:6px;flex-wrap:wrap}
 .chips span{padding:5px 10px;border-radius:999px;border:1px solid var(--line);font-size:13px}
-main{max-width:1440px;margin:0 auto;padding:20px 24px 40px;display:flex;flex-direction:column;gap:16px}
+main{max-width:2560px;margin:0 auto;padding:20px 24px 40px;display:flex;flex-direction:column;gap:16px}
 .view{display:flex;flex-direction:column;gap:16px}
 .row{display:flex;flex-wrap:wrap;gap:16px;align-items:stretch}
 .col{display:flex;flex-direction:column;gap:16px}
@@ -190,3 +190,10 @@ li.new a::before{content:"●";color:#B42318;font-size:9px;margin-right:5px;vert
 .legend-row select{height:26px;font-size:12px}
 button.toggle{height:32px;padding:0 12px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;font-size:13px}
 button.toggle.on{background:#2a78d6;border-color:#2a78d6;color:#fff;font-weight:600}
+
+/* 대시보드: 지도는 화면 높이에 맞춰 커지고, 뉴스·이벤트는 지도 아래 50:50 */
+.map.dash{height:clamp(520px,64vh,960px)}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:stretch}
+.pair>.card{min-width:0}
+.pair .feed{max-height:420px}
+@media (max-width:900px){.pair{grid-template-columns:1fr}}
