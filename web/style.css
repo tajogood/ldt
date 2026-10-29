@@ -217,3 +217,4 @@ button.toggle.on{background:#2a78d6;border-color:#2a78d6;color:#fff;font-weight:
   .dash-grid .scroll{flex:1 1 auto}
   .dash-grid .g-weekly .chart{flex:1 1 auto;height:auto;min-height:200px}
 }
+.hint p{margin:0 0 10px;line-height:1.6}

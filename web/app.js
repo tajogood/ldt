@@ -127,7 +127,7 @@ function vworldMap(el, opts = {}) {
       const g = L.featureGroup();
       items.filter((i) => i.lat != null).forEach((i) => {
         const mk = L.circleMarker([i.lat, i.lon], { renderer: R, radius: i.r, color: i.stroke || "#fff", weight: i.weight ?? (i.square ? 1 : 2),
-          fillColor: i.color, fillOpacity: i.opacity ?? 1 });
+          fillColor: i.color, fillOpacity: i.opacity ?? 1, interactive: i.interactive ?? true });
         if (i.title) mk.bindTooltip(esc(i.title), { sticky: true, direction: "top" });
         if (onClick) mk.on("click", () => onClick(i));
         g.addLayer(mk);
@@ -437,7 +437,7 @@ async function loadFarmPts(m, sp) {
 
 /* ── 2. 발생 추적: 시즌 재생 ───────────────────────────────────────────── */
 const TL = { data: null, cursor: 0, timer: null, byId: {} };
-const dayToDate = (d0, n) => { const x = new Date(d0 + "T00:00:00"); x.setDate(x.getDate() + n); return x.toISOString().slice(0, 10); };
+const dayToDate = (d0, n) => { const x = new Date(d0 + "T00:00:00Z"); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };   // UTC 기준(한국 시각에서 하루 밀리던 문제)
 const seasonYearOf = (iso, sp) => { const sm = CFG.species[sp]?.season_start_month || 1; const y = +iso.slice(0, 4), m = +iso.slice(5, 7); return m >= sm ? y : y - 1; };
 
 // 차트 세로선(재생 위치)
@@ -506,7 +506,18 @@ async function loadSeason() {
   if (S.pendingOpen && TL.byId[S.pendingOpen]) {
     const e = TL.byId[S.pendingOpen]; TL.cursor = e.day; $("#tl-slider").value = e.day; renderFrame(); openEvent(e.id, false);
   }
+  else if (!TL.byId[S.selected]) trackHint();
   S.pendingOpen = null;
+}
+
+function trackHint() {
+  const ev = (TL.data?.events || []).filter((e) => e.lat != null);
+  const last = ev.length ? ev.reduce((a, b) => (b.day > a.day ? b : a)) : null;
+  $("#detail").innerHTML = `<div class="pad hint">
+    <p>${t("track.howto")}</p>
+    ${last ? `<button class="small" id="tl-latest">${t("track.latest")}</button>
+      <p class="muted small">${esc(last.date)} · ${kindLabel(last.kind)} · ${esc(last.place || last.sigungu || "")}</p>` : ""}</div>`;
+  if (last) $("#tl-latest").onclick = () => openEvent(last.id, false);
 }
 
 function visibleEvents() {
@@ -527,13 +538,13 @@ function renderFrame() {
   m.dots("events", vis.map((e) => {
     const isNew = c - e.day < hw;
     return { ...e, z: 5, color: colorOf(e),
-      r: isNew ? 9 : e.kind === "outbreak" ? 5.5 : 5,
-      opacity: isNew ? 1 : 0.6, stroke: isNew ? "#17201B" : "#fff", weight: isNew ? 2 : 1,
+      r: isNew ? 10 : 7,
+      opacity: isNew ? 1 : 0.85, stroke: isNew ? "#17201B" : "#fff", weight: isNew ? 2.5 : 1.5,
       title: `${e.date} ${kindLabel(e.kind)} ${e.disease || ""} ${e.place || ""}${e.prev ? ` · ${t("tl.prevshort", { km: e.prev.km, d: e.prev.days })}` : ""}` };
   }), (e) => openEvent(e.id, false));
   // 방금 나타난 발생은 바깥 고리로 한 번 더 강조
   m.dots("rings", fresh.filter((e) => c - e.day < Math.max(2, +$("#tl-speed").value + 1)).map((e) => ({ ...e,
-    r: 16, color: colorOf(e), opacity: 0.08, stroke: colorOf(e), weight: 2, z: 5 })));
+    r: 18, color: colorOf(e), opacity: 0.08, stroke: colorOf(e), weight: 2, z: 4, interactive: false, title: "" })));
   // 연쇄 가능 연결선은 계속 남긴다(최근 것은 진하게)
   if (m.lines) m.lines("links", vis.filter((e) => e.linked && TL.byId[e.prev.id]).map((e) => {
     const p = TL.byId[e.prev.id]; return { from: [p.lat, p.lon], to: [e.lat, e.lon], color: "#B42318", opacity: c - e.day < hw ? 0.9 : 0.35 };
