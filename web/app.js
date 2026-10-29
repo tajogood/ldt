@@ -849,6 +849,7 @@ function drawAssocWild(W) {
   const max = Math.max(2, ...W.grid.flatMap((g) => g.cells.map((c) => c.rr || 0)));
   const cell = (c) => {
     if (c.rr == null) return `<td class="muted" title="${t("as.few")}">–</td>`;
+    if (c.rr === 0) return `<td title="${t("as.cellTip", { rr: 0, lo: 0, hi: xN(c.hi), a: 0, n1: fmtNum(c.n1), r1: 0, r0: c.rate0 })}">${t("as.zero")}</td>`;
     const a = c.rr > 1 ? Math.min(1, Math.log(c.rr) / Math.log(max)) : 0;
     return `<td class="${c.sig ? "sig" : ""}" style="background:${c.rr > 1 ? `rgba(180,35,24,${(0.1 + 0.8 * a).toFixed(2)})` : "var(--soft)"};color:${a > 0.5 ? "#fff" : "inherit"}"
       title="${t("as.cellTip", { rr: xN(c.rr), lo: xN(c.lo), hi: xN(c.hi), a: c.a, n1: fmtNum(c.n1), r1: c.rate1, r0: c.rate0 })}">×${xN(c.rr)}</td>`;
@@ -927,11 +928,12 @@ function drawAssocBirds(B) {
     { type: "line", label: t("as.b.dep"), data: B.departs, borderColor: "#1D4ED8", backgroundColor: "#1D4ED8", pointRadius: 2, yAxisID: "y1" }] },
     options: { scales: { y: { beginAtZero: true, title: { display: true, text: t("as.b.ob") } },
       y1: { beginAtZero: true, position: "right", grid: { drawOnChartArea: false }, title: { display: true, text: t("as.b.dep") } } } } });
-  $("#as-birds").innerHTML = (B.lag_median != null ? verdict(t("as.b.sum", { m: B.lag_median, a: B.lag_range[0], b: B.lag_range[1] })) : "") +
+  const dd = (v) => v < 0 ? t("as.b.before", { d: -v }) : t("as.b.after2", { d: v });
+  $("#as-birds").innerHTML = (B.lag_median != null ? verdict(t("as.b.sum", { m: dd(B.lag_median), a: dd(B.lag_range[0]), b: dd(B.lag_range[1]) })) : "") +
     `<table class="tbl small"><thead><tr><th>${t("as.b.season")}</th><th>${t("as.b.tracks")}</th><th>${t("as.b.med")}</th>
     <th>${t("as.b.p90")}</th><th data-tip="tip.as.lag">${t("as.b.lag")}</th><th>${t("as.b.after")}</th></tr></thead><tbody>` +
     B.rows.map((r) => `<tr><td>${r.season}</td><td>${r.tracks}</td><td>${r.depart_median.slice(5)}</td><td>${r.p90 ? r.p90.slice(5) : "–"}</td>
-      <td>${r.lag_p90 ?? "–"}${r.lag_p90 != null ? t("as.days") : ""}</td><td>${r.after_median}/${r.outbreaks}</td></tr>`).join("") + "</tbody></table>" +
+      <td>${r.lag_p90 == null ? "–" : dd(r.lag_p90)}</td><td>${r.after_median}/${r.outbreaks}</td></tr>`).join("") + "</tbody></table>" +
     `<p class="as-note muted small">${t("as.b.note")}</p>`;
 }
 

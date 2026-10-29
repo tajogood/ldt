@@ -336,3 +336,9 @@ Object.assign(I18N.ko, {"ver": "코드 {c} · 서버 시작 {t}", "ver.old": "�
 Object.assign(I18N.en, {"ver": "code {c} · started {t}", "ver.old": "New code ({d}) pulled but the server still runs the old one — ./restart.sh", "tip.ver": "Version (git commit) of the running server code and when it started."});
 Object.assign(I18N.ko, {"as.visitnote": "발생한 리·주와 표본으로 뽑은 리·주의 발생 2~4주 전 3주간 방문을 비교했습니다. 방문이 많은 구간일수록 위험 배수가 계단식으로 오르면 '많이 드나들수록 위험'이라는 뜻입니다. 큰 농장일수록 차량도 많고 위험도 커서 일부는 농장 규모 효과가 섞여 있습니다. 기간 {a} ~ {b}({w}주), 발생 {c}건, 비교 {k}개. 차량 번호가 가려져 있어 같은 차량의 이동 경로는 볼 수 없습니다."});
 Object.assign(I18N.en, {"as.visitnote": "Outbreak village-weeks vs sampled village-weeks, visits during weeks 2–4 before. Steps rising with visits = more traffic, more risk. Bigger farms get more vehicles and carry more risk, so part of this is a farm-size effect. {a} – {b} ({w} weeks), {c} outbreaks, {k} comparisons. Plates are masked, so routes of individual vehicles are not possible."});
+Object.assign(I18N.ko, {"as.zero": "0건", "as.b.before": "{d}일 먼저", "as.b.after2": "{d}일 뒤",
+  "as.b.sum": "시즌 발생의 90%가 끝나는 날은 철새 출발 중앙일보다 보통 {m}였습니다(해마다 {a} ~ {b}).",
+  "tip.as.lag": "발생 90% 시점이 철새 출발 중앙일보다 며칠 먼저/뒤인지. '뒤'면 철새가 떠난 뒤에도 그만큼 발생이 이어졌다는 뜻."});
+Object.assign(I18N.en, {"as.zero": "0 cases", "as.b.before": "{d} d earlier", "as.b.after2": "{d} d later",
+  "as.b.sum": "90% of a season's outbreaks were usually over {m} than the median bird departure (each year {a} to {b}).",
+  "tip.as.lag": "Days the 90%-of-outbreaks date falls before/after the median bird departure."});

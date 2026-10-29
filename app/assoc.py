@@ -717,7 +717,8 @@ def model(species: str, P: dict) -> dict:
     # 이번 주 예측: 이번 주 요인이 모두 있는 가장 풍부한 모형
     cur = [u for u in P["units"] if u["w"] == P["current"]]
     pred, used = [], None
-    for m in reversed(fits):
+    order = sorted(range(len(fits)), key=lambda i: (fits[i]["cases"] >= 100, i), reverse=True)
+    for m in (fits[i] for i in order):
         rows, _, keep = _design(P, m["features"], cur)
         if len(rows) >= len(cur) * 0.8 and rows:
             used = m
@@ -741,7 +742,9 @@ def model(species: str, P: dict) -> dict:
     for m in clean:
         for c in m["coef"]:
             c.pop("b", None)
-    return {"available": True, "models": clean, "best": len(clean) - 1, "pred": pred,
+    # 화면 대표 모형: 요인이 더 많은 모형이라도 발생 주가 100개 미만(짧은 기간)이면 기간이 긴 기본 모형을 앞세운다
+    best = max((i for i, m in enumerate(clean) if m["cases"] >= 100), default=0)
+    return {"available": True, "models": clean, "best": best, "pred": pred,
             "pred_model": fits.index(used) if used else None, "week": P["current"].isoformat()}
 
 
