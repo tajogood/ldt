@@ -252,6 +252,14 @@ def weather_backfill_now():
     return weather_bf.start_now()
 
 
+@app.get("/api/assoc/region")
+def assoc_region(species: str = "poultry", sido: str = "", sigungu: str = ""):
+    """연관 분석 팝업용: 시군의 농장 목록·읍면동별 농장 수·최근 발생."""
+    if species not in SPECIES:
+        raise HTTPException(400, "species")
+    return assoc.region_detail(species, sido, sigungu)
+
+
 @app.get("/api/assoc")
 def assoc_api(species: str = "poultry", disease: str | None = None):
     """연관 분석 6종(종합 모형·야생 검출 시차·기온·차량 방문·농장 밀집도·철새). 처음엔 계산 중 상태를 돌려준다."""

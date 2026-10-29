@@ -761,13 +761,14 @@ function forest(rows) {
   const col = (r) => r.ref ? "var(--muted)" : r.sig ? (r.v > 1 ? "#B42318" : "#1D4ED8") : "#8A8F8C";
   const body = rows.map((r, i) => {
     const y = 18 + i * 26;
-    const lab = `<text x="${L - 8}" y="${y + 4}" text-anchor="end">${r.label}</text>`;
+    const hit = r.key ? `<rect class="hit" x="0" y="${y - 12}" width="${W}" height="24" rx="4"/>` : "";
+    const lab = hit + `<text x="${L - 8}" y="${y + 4}" text-anchor="end">${r.label}${r.key ? ' <tspan class="m">›</tspan>' : ""}</text>`;
     if (r.v == null || !isFinite(r.v)) return lab + `<text x="${L}" y="${y + 4}" class="m">${r.note || t("as.few")}</text>`;
     const ci = r.lo != null && !r.ref ? `<line x1="${X(r.lo)}" x2="${X(r.hi)}" y1="${y}" y2="${y}" stroke="${col(r)}" stroke-width="2.5"/>` : "";
     const val = r.ref ? t("as.ref") : `×${xN(r.v)}`;
     return lab + ci + `<circle cx="${X(r.v)}" cy="${y}" r="${r.ref ? 4 : 5.5}" fill="${col(r)}"><title>${esc(r.tip || "")}</title></circle>` +
       `<text x="${R + 10}" y="${y + 4}" ${r.sig ? 'font-weight="700"' : 'class="m"'}>${val}${r.lo != null && !r.ref ? ` <tspan class="m" font-weight="400">(${rngTxt(r.lo, r.hi)})</tspan>` : ""}</text>`;
-  }).join("");
+  }).map((g, i) => rows[i].key ? `<g class="frow" data-key="${esc(rows[i].key)}">${g}</g>` : g).join("");
   const axis = ticks.map((x) => `<line x1="${X(x)}" x2="${X(x)}" y1="6" y2="${H - 16}" stroke="var(--soft)"/><text x="${X(x)}" y="${H - 2}" text-anchor="middle" class="m">×${x}</text>`).join("");
   return `<svg class="forest" viewBox="0 0 ${W} ${H}" role="img">${axis}<line class="ref" x1="${X(1)}" x2="${X(1)}" y1="4" y2="${H - 16}"/>${body}</svg>`;
 }
@@ -937,12 +938,64 @@ function drawAssocDensity(D) {
     const v = top.sig && top.rr > 1
       ? t("as.dens.v", { f: t("asd." + F.factor), a: range(top), q: QL(F.top_q), b: range(r1), rr: xN(top.rr), lo: xN(top.lo), hi: xN(top.hi) })
       : t("as.dens.v0", { f: t("asd." + F.factor) });
-    return `<b>${t("asd." + F.factor)}</b>` + verdict(v) + forest(F.rows.map((r) => ({
+    return `<b>${t("asd." + F.factor)}</b>` + verdict(v) + forest(F.rows.map((r) => ({ key: `${F.factor}|${r.q}`,
       label: `${range(r)} <tspan class="m">${QL(r.q)}</tspan>`, v: r.rr, lo: r.q === 1 ? null : r.lo, hi: r.q === 1 ? null : r.hi, sig: r.sig, ref: r.q === 1,
       tip: `${t("as.regions", { n: r.regions })} · ${t("as.units", { u: fmtNum(r.units), c: r.cases })}` }))) +
       (top.sig && top.rr > 1 ? `<p class="small as-note">${t("as.dens.list", { q: QL(F.top_q), n: F.top_n })} ${F.top_regions.map(esc).join(", ")}${F.top_n > F.top_regions.length ? " …" : ""}</p>` : "");
-  }).join("") + legendLine() + `<p class="as-note muted small">${t("as.densnote")}</p>`;
+  }).join("") + `<p class="small as-note">${t("as.clickband")}</p>` + legendLine() + `<p class="as-note muted small">${t("as.densnote")}</p>`;
+  S.densF = D.factors;
+  $("#as-density").querySelectorAll(".frow").forEach((g) => g.onclick = () => {
+    const [f, q] = g.dataset.key.split("|");
+    const F = S.densF.find((x) => x.factor === f);
+    if (F) openBand(F, F.rows[+q - 1]);
+  });
 }
+
+/* ── 공용 팝업 ───────────────────────────────────────────────────────── */
+function openModal(title, html) {
+  if (!S.modalReady) {                 // 처음 열 때 닫기 버튼·바깥 클릭·Esc 연결(팝업 HTML은 스크립트보다 뒤에 있음)
+    S.modalReady = true;
+    $("#m-close").onclick = closeModal;
+    $("#modal").onclick = (e) => { if (e.target.id === "modal") closeModal(); };
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("#modal").hidden) closeModal(); });
+  }
+  $("#m-title").innerHTML = title; $("#m-body").innerHTML = html; $("#modal").hidden = false;
+  $("#m-body").scrollTop = 0;
+}
+function closeModal() { $("#modal").hidden = true; }
+
+// 밀집도 구간 → 그 구간 시군 목록 → 시군을 누르면 농장 목록
+function openBand(F, r) {
+  const fmtv = (v) => v == null ? "–" : F.factor === "duck_share" ? `${Math.round(v * 100)}%` : fmtNum(Math.round(v));
+  const unit = t("asu." + F.factor);
+  const title = `${t("asd." + F.factor)} ${fmtv(r.vmin)}~${fmtv(r.vmax)}${unit} <span class="muted">(${QL(r.q)})</span>`;
+  const head = `<p class="as-verdict">${t("as.band.sum", { n: r.regions, u: fmtNum(r.units), c: fmtNum(r.cases), rate: r.rate1 ?? "–" })}` +
+    (r.q === 1 ? ` ${t("as.band.ref")}` : r.rr != null ? ` ${t("as.band.rr", { rr: xN(r.rr), lo: xN(r.lo), hi: xN(r.hi) })}` : "") + `</p>`;
+  const tbl = `<table class="tbl"><thead><tr><th>${t("th.region")}</th><th>${t("asd.farms")}</th><th>${t("asd.heads_per_farm")}</th>
+    <th>${t("asd.duck_share")}</th><th data-tip="tip.as.cases">${t("as.band.cases")}</th></tr></thead><tbody>` +
+    (r.members || []).map((m, i) => `<tr class="click" data-i="${i}"><td><b>${esc(m.region)}</b> <span class="muted">›</span></td><td>${fmtNum(m.farms ?? 0)}</td>
+      <td>${m.hpf != null ? fmtNum(m.hpf) : "–"}</td><td>${m.duck != null ? Math.round(m.duck * 100) + "%" : "–"}</td><td>${m.cases}</td></tr>`).join("") + "</tbody></table>";
+  openModal(title, head + `<p class="small muted">${t("as.band.hint")}</p>` + tbl);
+  $("#m-body").querySelectorAll("tr.click").forEach((tr) => tr.onclick = () => openRegion(r.members[+tr.dataset.i], () => openBand(F, r)));
+}
+
+async function openRegion(m, back) {
+  const sp = S.species === "all" ? "poultry" : S.species;
+  openModal(esc(m.region), `<p class="muted">${t("as.wait")}</p>`);
+  const d = await api(`/api/assoc/region?species=${sp}&sido=${encodeURIComponent(m.sido || "")}&sigungu=${encodeURIComponent(m.sigungu)}`);
+  const ob = d.outbreaks.length ? `<b>${t("as.rg.ob", { n: d.outbreaks.length })}</b><div class="scroll"><table class="tbl small"><thead><tr><th>${t("th.date")}</th><th>${t("th.disease")}</th><th>${t("th.sub")}</th><th>${t("th.place")}</th></tr></thead><tbody>` +
+    d.outbreaks.map((o) => `<tr><td>${o.date}</td><td>${esc(o.disease || "")}</td><td>${esc(o.subspecies || "")}</td><td>${esc(o.place || "")}</td></tr>`).join("") + "</tbody></table></div>"
+    : `<p class="muted">${t("as.rg.noob")}</p>`;
+  const emd = d.emd.length ? `<b>${t("as.rg.emd")}</b><div class="scroll"><table class="tbl small"><thead><tr><th>${t("xc.emd")}</th><th>${t("dash.m.farms")}</th><th>${t("dash.m.heads")}</th><th>${t("as.rg.duck")}</th></tr></thead><tbody>` +
+    d.emd.map((e) => `<tr><td>${esc(e.emd)}</td><td>${fmtNum(e.farms)}</td><td>${fmtNum(e.heads)}</td><td>${fmtNum(e.duck)}</td></tr>`).join("") + "</tbody></table></div>" : "";
+  const farms = d.farms.length ? `<b>${t("as.rg.farms", { n: fmtNum(d.farms_total) })}</b><div class="scroll tall"><table class="tbl small"><thead><tr><th>${t("xc.name")}</th><th>${t("th.sub")}</th><th>${t("xc.size")}</th><th>${t("xc.status")}</th><th>${t("xc.address")}</th></tr></thead><tbody>` +
+    d.farms.map((f) => `<tr><td>${esc(f.name || "–")}</td><td>${esc(f.subspecies || "")}</td><td>${f.size != null ? fmtNum(f.size) : ""}</td><td>${esc(f.status || "")}</td><td>${esc(f.address || "")}</td></tr>`).join("") + "</tbody></table></div>"
+    : `<p class="muted">${t("as.rg.nofarms")}</p>`;
+  openModal(`${esc(m.region)} <span class="muted small">${t("as.rg.sub", { f: fmtNum(m.farms ?? 0), c: m.cases })}</span>`,
+    (back ? `<button class="small" id="m-back">‹ ${t("as.rg.back")}</button>` : "") + ob + emd + farms);
+  if (back) $("#m-back").onclick = back;
+}
+
 
 function drawAssocBirds(B) {
   if (!B.available) { clearChart("chart-as-birds"); $("#as-birds").innerHTML = `<p class="muted">${asReason(B)}</p>`; return; }

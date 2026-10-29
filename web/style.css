@@ -244,3 +244,16 @@ table.tbl.small{font-size:12px}
 .as-verdict{margin:4px 0 10px;padding:10px 12px;background:var(--soft);border-radius:8px;line-height:1.6;font-size:14px}
 .as-how{margin:6px 0 10px;line-height:1.55}
 #as-visits>b,#as-density>b{display:block;margin-top:10px}
+
+/* 공용 팝업 */
+.modal{position:fixed;inset:0;z-index:2000;background:rgba(0,0,0,.45);display:flex;align-items:flex-start;justify-content:center;padding:6vh 16px}
+.modal[hidden]{display:none}
+.mbox{background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:12px;width:min(980px,100%);max-height:88vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.35)}
+.mhead{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid var(--soft)}
+.mhead h3{margin:0;font-size:17px}
+.mclose{border:0;background:none;color:var(--ink);font-size:26px;line-height:1;cursor:pointer;padding:0 4px}
+.mbody{padding:14px 18px;overflow:auto}
+.mbody>b{display:block;margin:14px 0 6px}
+.mbody .scroll.tall{max-height:420px}
+.mbody tr.click{cursor:pointer}.mbody tr.click:hover td{background:var(--soft)}
+.forest .frow{cursor:pointer}.forest .frow .hit{fill:transparent}.forest .frow:hover .hit{fill:var(--soft)}

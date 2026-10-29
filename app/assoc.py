@@ -455,17 +455,24 @@ def density(P: dict) -> dict:
         cuts = _quantiles(list(vals.values()))
         q = {k: _qbin(v, cuts) for k, v in vals.items()}
         cnt = [[0, 0] for _ in range(5)]
+        rc = Counter()                                  # 시군별 발생 주 수(목록 팝업용)
         for u in us:
             if u["k"] in q:
                 cnt[q[u["k"]]][0] += u["y"]; cnt[q[u["k"]]][1] += 1
+                rc[u["k"]] += u["y"]
         rows = []
         for i in range(5):
             r = _rr(cnt[i][0], cnt[i][1], cnt[0][0], cnt[0][1]) if i else \
                 {"rr": 1.0, "rate1": round(cnt[0][0] / cnt[0][1] * 1000, 2) if cnt[0][1] else None}
             vs = [v for kk, v in vals.items() if q[kk] == i]
+            members = sorted((kk for kk in q if q[kk] == i), key=lambda kk: -vals[kk])
             rows.append({"q": i + 1, "vmin": round(min(vs), 3) if vs else None, "vmax": round(max(vs), 3) if vs else None,
                          "regions": len(vs), "cases": cnt[i][0], "units": cnt[i][1],
-                         **{x: r.get(x) for x in ("rr", "lo", "hi", "rate1", "sig")}})
+                         **{x: r.get(x) for x in ("rr", "lo", "hi", "rate1", "sig")},
+                         "members": [{"region": kk, "sido": regs[kk]["sido"], "sigungu": regs[kk]["sigungu"],
+                                      "farms": regs[kk].get("farms"), "hpf": round(regs[kk]["hpf"]) if regs[kk].get("hpf") else None,
+                                      "duck": round(regs[kk]["duck"], 3) if regs[kk].get("duck") is not None else None,
+                                      "cases": rc[kk]} for kk in members]})
         hiq = max(range(1, 5), key=lambda i: rows[i]["rr"] or 0)
         names = sorted((k for k in q if q[k] == hiq), key=lambda k: -vals[k])
         out.append({"factor": lab, "rows": rows, "top_q": hiq + 1, "top_regions": names[:15], "top_n": len(names)})
@@ -825,3 +832,33 @@ def get(species: str, disease: str | None, wait: float = 0) -> dict:
     if hit:
         return {**hit[1], "status": "updating" if running else "ready"}
     return {"status": "computing", "since": _jobs.get(key)}
+
+
+def region_detail(species: str, sido: str, sigungu: str, limit: int = 2000) -> dict:
+    """연관 분석 팝업: 한 시군의 농장 목록(행안부 가축사육업 좌표 자료)과 읍면동별 농장 수, 최근 발생."""
+    sg = (sigungu or "").strip()
+    first = sg.split()[0] if sg else ""
+    short = _sido(sido)
+    with db.session() as con:
+        farms = con.rows("SELECT id, name, subspecies, status, size, sido, sigungu, address, lat, lon FROM facility "
+                         "WHERE kind = 'farm' AND species = ? AND (sigungu = ? OR sigungu = ? OR sigungu LIKE ?) "
+                         "ORDER BY size DESC", [species, sg, first, f"{first} %"])
+        farms = [f for f in farms if not f["sido"] or _sido(f["sido"]) == short]
+        emd = con.rows("SELECT emd, metric, SUM(value) AS v FROM region_stat WHERE source IN (?, ?) AND species = ? "
+                       "AND sigungu = ? AND emd <> '' GROUP BY emd, metric", [A.FARM_SOURCE, A.HEADS_SOURCE, species, sg])
+        obs = con.rows("SELECT date, disease, subspecies, place, sido FROM event WHERE species = ? AND kind = 'outbreak' "
+                       "AND (sigungu = ? OR sigungu = ?) ORDER BY date DESC LIMIT 200", [species, sg, first])
+    obs = [o for o in obs if not o["sido"] or _sido(o["sido"]) == short]
+    by = defaultdict(lambda: {"farms": 0, "heads": 0, "duck": 0})
+    for r in emd:
+        if r["metric"].startswith("farms"):
+            by[r["emd"]]["farms"] += r["v"] or 0
+            if "오리" in r["metric"]:
+                by[r["emd"]]["duck"] += r["v"] or 0
+        elif r["metric"].startswith("heads"):
+            by[r["emd"]]["heads"] += r["v"] or 0
+    emd_rows = sorted(({"emd": k, "farms": round(v["farms"]), "heads": round(v["heads"]), "duck": round(v["duck"])}
+                       for k, v in by.items() if v["farms"]), key=lambda x: -x["farms"])
+    active = [f for f in farms if not (f["status"] and ("폐업" in f["status"] or "취소" in f["status"]))]
+    return {"sido": sido, "sigungu": sg, "farms": active[:limit], "farms_total": len(active), "closed": len(farms) - len(active),
+            "emd": emd_rows, "outbreaks": [{**o, "date": str(o["date"])[:10]} for o in obs]}

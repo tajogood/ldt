@@ -350,3 +350,23 @@ Object.assign(I18N.en, {"as.wx.now": "Fetch now", "as.wx.wait": "Starts automati
   "as.wx.nokey": "No DATA_GO_KR_KEY, so temperatures cannot be fetched.",
   "as.wx.running": "Fetching temperatures for past outbreak months only: {d}/{t} (station × period) · {r} rows — recomputes automatically when done.",
   "as.wx.done": "Finished ({t} requests, {r} rows). If still empty, data were missing or requests failed (see error)."});
+Object.assign(I18N.ko, {
+  "as.clickband": "구간(줄)을 누르면 그 구간에 속한 시군과 농장 목록을 볼 수 있습니다.",
+  "as.band.sum": "이 구간 시군 {n}곳 · 분석 단위(시군·주) {u}개 중 농장 발생이 있던 주 {c}개 (1000단위당 {rate}).",
+  "as.band.ref": "이 구간이 비교 기준(1배)입니다.", "as.band.rr": "기준 구간보다 발생 위험 ×{rr} (오차 범위 {lo}~{hi}배).",
+  "as.band.hint": "시군을 누르면 그 시군의 농장 목록과 발생 이력이 나옵니다.", "as.band.cases": "발생 주",
+  "tip.as.cases": "분석 기간(최근 12개 시즌의 발생 달) 동안 그 시군에서 농장 발생이 있었던 주의 수.",
+  "as.rg.ob": "농장 발생 이력 {n}건", "as.rg.noob": "이 시군의 농장 발생 기록이 없습니다.", "as.rg.emd": "읍면동별 농장 수 (농림부 통계)",
+  "as.rg.duck": "오리 농장", "as.rg.farms": "농장 목록 {n}곳 (행정안전부 가축사육업, 영업 중)", "as.rg.back": "구간 목록으로",
+  "as.rg.nofarms": "행정안전부 가축사육업(농장 좌표) 자료에 이 시군 농장이 없습니다. 위 읍면동별 농장 수(농림부 통계)를 참고하세요.",
+  "as.rg.sub": "농장 {f}곳 · 발생 주 {c}"});
+Object.assign(I18N.en, {
+  "as.clickband": "Click a band (row) to see its counties and farms.",
+  "as.band.sum": "{n} counties · {c} of {u} county-weeks had a farm outbreak ({rate} per 1000).",
+  "as.band.ref": "This band is the reference (×1).", "as.band.rr": "×{rr} the risk of the reference band (range {lo}–{hi}).",
+  "as.band.hint": "Click a county for its farm list and outbreak history.", "as.band.cases": "Outbreak weeks",
+  "tip.as.cases": "Weeks with a farm outbreak in the county during the analysis period.",
+  "as.rg.ob": "Farm outbreaks ({n})", "as.rg.noob": "No farm outbreaks recorded.", "as.rg.emd": "Farms by township (MAFRA)",
+  "as.rg.duck": "Duck farms", "as.rg.farms": "Farms ({n}, MOIS licences, active)", "as.rg.back": "Back to band",
+  "as.rg.nofarms": "No farms in the MOIS licence data for this county; see township counts above.",
+  "as.rg.sub": "{f} farms · {c} outbreak weeks"});
