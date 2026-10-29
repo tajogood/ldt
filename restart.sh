@@ -5,7 +5,7 @@
 # 외부에서 접속하려면 .env 에 HOST=0.0.0.0 (기본 127.0.0.1)
 set -uo pipefail
 cd "$(dirname "$0")"
-PORT="${PORT:-$(grep -E '^PORT=' .env 2>/dev/null | cut -d= -f2)}"; PORT="${PORT:-8000}"
+PORT="${PORT:-$(grep -E '^PORT=' .env 2>/dev/null | cut -d= -f2 || true)}"; PORT="${PORT:-8000}"
 
 if [ "${1:-}" = "pull" ]; then
   git pull --ff-only || { echo "git pull 실패 — 직접 고친 파일이 있으면 'git status' 로 확인하세요"; exit 1; }
