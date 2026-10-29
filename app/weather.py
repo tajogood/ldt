@@ -67,7 +67,7 @@ def needed_ranges() -> list[tuple[date, date]]:
     res = []
     for a, b in merged:
         while a <= b:
-            e = min(b, a + timedelta(days=900))
+            e = min(b, a + timedelta(days=360))   # 요청 1회 = 최대 1년
             res.append((a, e))
             a = e + timedelta(days=1)
     return res
@@ -91,33 +91,55 @@ def plan() -> list[tuple[str, str, date, date]]:
 def run(pause: float = PAUSE) -> dict:
     src = collect.get_source("kma_asos_daily")
     tasks = plan()
-    state.update(running=True, done=0, total=len(tasks), rows=0, error=None,
-                 ranges=[f"{a}~{b}" for a, b in needed_ranges()])
+    state.update(running=True, done=0, total=len(tasks), rows=0, error=None, errors=0,
+                 ranges=[f"{a}~{b}" for a, b in needed_ranges()], started_at=db.now().isoformat(timespec="seconds"))
+    print(f"[기온] 발생 시기 기온 받기 시작: 관측소·기간 {len(tasks)}건 ({', '.join(state['ranges'][:3])}…)", flush=True)
     try:
         for stn, name, a, b in tasks:
             s = {**src, "params": {"dataType": "JSON", "dataCd": "ASOS", "dateCd": "DAY",
                                    "startDt": f"{a:%Y%m%d}", "endDt": f"{b:%Y%m%d}", "stnIds": stn},
                  "paging": {"page": "pageNo", "size": "numOfRows", "per": 999}}
             rows = []
+            ok = False
             for attempt in range(3):
                 try:
                     for rec in collect.fetch_paged(s, {"serviceKey": DATA_GO_KR_KEY}):
                         rec["_stn_name"] = name
                         rows.extend(collect._asos_rows(rec))
+                    ok = True
                     break
                 except Exception as e:      # 일시 오류는 잠깐 쉬었다 다시
                     state["error"] = f"{stn} {a}~{b}: {str(e)[:160]}"
                     time.sleep(5 * (attempt + 1))
+            if not ok:
+                state["errors"] += 1
+                print(f"[기온] 실패 {state['error']}", flush=True)
+                if state["errors"] >= 5 and state["errors"] > state["done"] // 2:   # 계속 실패하면(키·한도 문제) 멈춤
+                    print("[기온] 실패가 계속되어 멈춥니다. 공공데이터포털에서 '기상청_지상(종관, ASOS) 일자료 조회서비스' 활용 승인과 일일 한도를 확인하세요.", flush=True)
+                    break
             if rows:
                 with db.session() as con:
                     state["rows"] += db.upsert(con, "context_ts", rows)
             state["done"] += 1
+            if state["done"] % 25 == 0:
+                print(f"[기온] {state['done']}/{state['total']} · {state['rows']}행", flush=True)
             time.sleep(pause)
     except Exception as e:
         traceback.print_exc()
         state["error"] = str(e)[:300]
     finally:
         state.update(running=False, finished_at=db.now().isoformat(timespec="seconds"))
+        print(f"[기온] 끝: {state['done']}/{state['total']} · {state['rows']}행 · 실패 {state.get('errors', 0)}", flush=True)
+    return status()
+
+
+def start_now() -> dict:
+    """화면의 '지금 받기' — 기다리지 않고 바로 받기 시작(이미 받는 중이면 그대로)."""
+    if not DATA_GO_KR_KEY:
+        return {**status(), "error": "DATA_GO_KR_KEY 가 없습니다"}
+    if not state.get("running"):
+        state["running"] = True                   # 두 번 눌러도 한 번만
+        threading.Thread(target=run, name="weather-now", daemon=True).start()
     return status()
 
 
@@ -125,7 +147,7 @@ def _loop() -> None:
     time.sleep(60)                 # 서버가 뜬 뒤 다른 수집과 겹치지 않게 잠깐 쉬었다가
     while True:
         try:
-            if plan():
+            if not state.get("running") and plan():   # 화면에서 '지금 받기'로 이미 받는 중이면 건너뜀
                 run()
         except Exception:
             traceback.print_exc()
@@ -139,4 +161,6 @@ def start() -> None:
 
 
 def status() -> dict:
-    return {k: v for k, v in state.items() if k != "thread"}
+    out = {k: v for k, v in state.items() if k != "thread"}
+    out["key"] = bool(DATA_GO_KR_KEY)
+    return out

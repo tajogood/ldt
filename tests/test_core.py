@@ -653,7 +653,7 @@ def test_wild_file_import(tmp_path):
 def test_weather_backfill_plans_only_outbreak_months(monkeypatch):
     from app import collect, weather
     rs = weather.needed_ranges()
-    assert rs and all((b - a).days <= 900 for a, b in rs)
+    assert rs and all((b - a).days <= 360 for a, b in rs)
     calls = []
 
     def fake(src, base, limit=None):

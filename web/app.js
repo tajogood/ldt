@@ -861,8 +861,32 @@ function drawAssocWild(W) {
     <p class="as-note muted small">${t("as.wildnote", { n: fmtNum(W.wild_events), u: fmtNum(W.units), c: fmtNum(W.cases) })}</p>`;
 }
 
+// 기온 자료가 아직 없을 때: 서버가 발생 시기 기온을 받는 진행 상황을 바로 보여 주고, 다 받으면 다시 계산
+async function tempWait() {
+  clearTimeout(S.wxPoll);
+  if (S.view !== "corr") return;
+  const b = await api("/api/weather/backfill").catch(() => null);
+  if (!b) return;
+  const pct = b.total ? Math.round(100 * b.done / b.total) : 0;
+  const line = !b.key ? t("as.wx.nokey")
+    : b.running ? t("as.wx.running", { d: b.done, t: b.total, r: fmtNum(b.rows || 0) }) + `<div class="visit-prog"><div class="bar"><i style="width:${pct}%"></i></div></div>`
+    : b.finished_at ? t("as.wx.done", { t: b.total, r: fmtNum(b.rows || 0) }) : t("as.wx.wait");
+  $("#as-temp").innerHTML = `<p>${t("as.r.no_weather")}</p><p>${line}</p>` +
+    (b.error ? `<p class="bad small">${esc(b.error)}</p>` : "") +
+    (b.key && !b.running ? `<button class="small" id="wx-now">${t("as.wx.now")}</button>` : "");
+  const btn = $("#wx-now");
+  if (btn) btn.onclick = async () => { btn.disabled = true; await fetch("/api/weather/backfill", { method: "POST" }); tempWait(); };
+  if (S.wxWasRunning && !b.running) {            // 방금 다 받음 → 연관 분석 다시 계산
+    S.wxWasRunning = false;
+    const sp = S.species === "all" ? "poultry" : S.species;
+    return loadAssoc(sp, S.tlDisease || CFG.species[sp].main_disease);
+  }
+  S.wxWasRunning = !!b.running;
+  if (b.running || !b.finished_at) S.wxPoll = setTimeout(tempWait, 5000);
+}
+
 function drawAssocTemp(T) {
-  if (!T.available) { clearChart("chart-as-temp"); $("#as-temp").innerHTML = asReason(T); return; }
+  if (!T.available) { clearChart("chart-as-temp"); $("#as-temp").innerHTML = asReason(T); if (T.reason === "no_weather") tempWait(); return; }
   const lab = (b) => b.tmin <= -99 ? `${b.tmax}℃ ${t("as.below")}` : b.tmax >= 99 ? `${b.tmin}℃ ${t("as.above")}` : `${b.tmin}~${b.tmax}℃`;
   const bs = T.bins.filter((b) => b.units);
   chart("chart-as-temp", { type: "bar", data: { labels: bs.map(lab), datasets: [{ label: t("as.rate"), data: bs.map((b) => b.rate1 ?? 0),

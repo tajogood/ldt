@@ -247,6 +247,11 @@ def weather_backfill():
     return weather_bf.status()
 
 
+@app.post("/api/weather/backfill")
+def weather_backfill_now():
+    return weather_bf.start_now()
+
+
 @app.get("/api/assoc")
 def assoc_api(species: str = "poultry", disease: str | None = None):
     """연관 분석 6종(종합 모형·야생 검출 시차·기온·차량 방문·농장 밀집도·철새). 처음엔 계산 중 상태를 돌려준다."""

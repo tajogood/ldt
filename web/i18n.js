@@ -342,3 +342,11 @@ Object.assign(I18N.ko, {"as.zero": "0건", "as.b.before": "{d}일 먼저", "as.b
 Object.assign(I18N.en, {"as.zero": "0 cases", "as.b.before": "{d} d earlier", "as.b.after2": "{d} d later",
   "as.b.sum": "90% of a season's outbreaks were usually over {m} than the median bird departure (each year {a} to {b}).",
   "tip.as.lag": "Days the 90%-of-outbreaks date falls before/after the median bird departure."});
+Object.assign(I18N.ko, {"as.wx.now": "지금 받기", "as.wx.wait": "서버가 켜지고 1분 뒤 자동으로 받기 시작합니다. 바로 시작하려면 '지금 받기'를 누르세요.",
+  "as.wx.nokey": "공공데이터포털 키(DATA_GO_KR_KEY)가 없어 기온을 받을 수 없습니다.",
+  "as.wx.running": "과거 발생 시기의 기온만 골라 받는 중: {d}/{t} (관측소·기간) · {r}행 — 다 받으면 자동으로 다시 계산합니다.",
+  "as.wx.done": "받기 끝({t}건, {r}행). 아직 비어 있으면 그 기간 관측 자료가 없거나 요청이 실패한 것입니다(아래 오류 참고)."});
+Object.assign(I18N.en, {"as.wx.now": "Fetch now", "as.wx.wait": "Starts automatically 1 minute after the server starts. Press 'Fetch now' to start immediately.",
+  "as.wx.nokey": "No DATA_GO_KR_KEY, so temperatures cannot be fetched.",
+  "as.wx.running": "Fetching temperatures for past outbreak months only: {d}/{t} (station × period) · {r} rows — recomputes automatically when done.",
+  "as.wx.done": "Finished ({t} requests, {r} rows). If still empty, data were missing or requests failed (see error)."});
