@@ -203,8 +203,23 @@ def now() -> datetime:
 
 
 def init() -> None:
-    md.create_all(engine)
-    _migrate()
+    try:
+        md.create_all(engine)
+        _migrate()
+    except Exception as e:
+        if IS_PG and "lock" in str(e).lower():
+            # 표 잠금을 못 얻음 → 같은 DB를 잡고 있는 다른 연결을 보여 주고 멈춘다(조용히 무한 대기하지 않게)
+            try:
+                with engine.connect() as c:
+                    rows = c.execute(text("SELECT pid, application_name, state, now() - xact_start AS age, LEFT(query, 80) AS q "
+                                          "FROM pg_stat_activity WHERE datname = current_database() AND pid <> pg_backend_pid()")).all()
+                print("\n[DB 잠금] 다른 프로세스가 표를 쓰고 있어 DB 준비를 마치지 못했습니다. 지금 DB에 붙어 있는 연결:")
+                for r in rows:
+                    print(f"  pid {r.pid} · {r.state} · {r.age} · {r.q}")
+                print("  → 이전 서버/수집기를 끄고 다시 시도하세요:  pkill -f 'app.cli serve'; pkill -f collect_visits.py\n")
+            except Exception:
+                pass
+        raise
 
 
 def _migrate() -> None:
@@ -215,10 +230,16 @@ def _migrate() -> None:
     ev_cols = {c["name"] for c in insp.get_columns("event")}
     rs_cols = {c["name"] for c in insp.get_columns("region_stat")}
     with engine.begin() as con:
+        if IS_PG:
+            # 다른 프로세스가 표를 쓰고 있으면 무한정 기다리지 말고 10초 뒤 알려 준다
+            con.execute(text("SET LOCAL lock_timeout = '10s'"))
         if "legal_code" not in ev_cols:
             con.execute(text("ALTER TABLE event ADD COLUMN legal_code VARCHAR(10)"))
         if IS_PG:
-            con.execute(text("ALTER TABLE event ALTER COLUMN disease TYPE VARCHAR(80)"))
+            ln = con.execute(text("SELECT character_maximum_length FROM information_schema.columns "
+                                  "WHERE table_name = 'event' AND column_name = 'disease'")).scalar()
+            if ln is not None and ln < 80:      # 이미 80이면 건드리지 않는다(표 전체 잠금이 필요한 작업이라)
+                con.execute(text("ALTER TABLE event ALTER COLUMN disease TYPE VARCHAR(80)"))
         if "emd" not in rs_cols:
             # region_stat 은 원천에서 다시 만들 수 있는 집계 테이블이라 새 키로 재생성한다
             region_stat.drop(con)

@@ -27,10 +27,16 @@ fi
 mkdir -p data/logs
 nohup ./run.sh > data/logs/server.log 2>&1 &
 echo "켜는 중… (로그: data/logs/server.log)"
-for i in $(seq 1 120); do
+for i in $(seq 1 180); do
   if curl -s "http://127.0.0.1:$PORT/api/version" >/dev/null 2>&1; then
     echo "실행 중: $(curl -s http://127.0.0.1:$PORT/api/version)"; exit 0
   fi
+  if ! pgrep -f "bash ./run.sh" >/dev/null 2>&1; then
+    echo "run.sh 가 멈췄습니다. 로그 끝부분:"; tail -25 data/logs/server.log; exit 1
+  fi
+  [ $((i % 15)) = 0 ] && echo "  …아직 준비 중(${i}초) · 마지막 로그: $(tail -1 data/logs/server.log | cut -c1-100)"
   sleep 1
 done
-echo "2분 안에 뜨지 않았습니다. 로그 끝부분:"; tail -20 data/logs/server.log; exit 1
+echo "3분 안에 뜨지 않았습니다. 로그 끝부분:"; tail -25 data/logs/server.log
+echo "다른 서버·수집기가 DB를 잡고 있을 수 있습니다:  ps -ef | grep -E 'app.cli|collect_visits|run.sh' | grep -v grep"
+exit 1
