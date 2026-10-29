@@ -453,8 +453,8 @@ sources:
     uid_from: [farm_key, at, party]
 
   - id: kahis_vehicle_visit
-    title: KAHIS 축산차량 시설방문 정보 (별도 수집기 ./visits.sh)
-    title_en: Livestock vehicle facility visits (KAHIS, separate collector ./visits.sh)
+    title: 축산차량 시설방문 정보 (별도 수집기 ./visits.sh)
+    title_en: Livestock vehicle facility visits (separate collector ./visits.sh)
     refresh: daily
     group: visits            # 웹 서버 자동 수집에서 제외 — ./visits.sh 가 따로 받음
     provider: kahis_visit

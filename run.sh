@@ -16,4 +16,6 @@ fi
 .venv/bin/python -m app.cli init
 .venv/bin/python -m app.cli collect manual_events || true
 .venv/bin/python -m app.cli sources
-.venv/bin/python -m app.cli serve --port "${PORT:-8000}"
+# 외부(같은 네트워크·다른 기기)에서 접속하려면 .env 에 HOST=0.0.0.0
+HOST="${HOST:-$(grep -E '^HOST=' .env 2>/dev/null | cut -d= -f2)}"
+.venv/bin/python -m app.cli serve --host "${HOST:-127.0.0.1}" --port "${PORT:-8000}"

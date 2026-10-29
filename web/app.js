@@ -55,13 +55,15 @@ function freshHTML(list) {
 const showFresh = (id, list) => { const el = document.getElementById(id); if (el) el.innerHTML = freshHTML(list); };
 
 async function lastCollect() {
-  const [all, auto] = await Promise.all([api("/api/freshness"), api("/api/auto")]);
+  const [all, auto, ver] = await Promise.all([api("/api/freshness"), api("/api/auto"), api("/api/version").catch(() => null)]);
   S.auto = auto;
   const ts = all.map((f) => f.collected_at).filter(Boolean).sort().pop();
   const stale = all.filter((f) => f.stale).length;
   $("#last-collect").innerHTML = (ts ? t("fr.last", { t: fmtTime(ts) }) : t("fr.never")) +
     (stale ? ` · <b class="stale">${t("fr.stale")} ${stale}</b>` : "") +
-    (auto.running ? ` · <b>${t("auto.running", { k: t("auto." + auto.running), t: fmtTime(auto.started_at) })}</b>` : auto.enabled ? ` · ${t("auto.bar", { at: auto.at })}` : "");
+    (auto.running ? ` · <b>${t("auto.running", { k: t("auto." + auto.running), t: fmtTime(auto.started_at) })}</b>` : auto.enabled ? ` · ${t("auto.bar", { at: auto.at })}` : "") +
+    (ver ? ` · <span data-tip="tip.ver">${t("ver", { c: ver.code, t: fmtTime(ver.started_at) })}</span>` +
+      (ver.disk && ver.disk !== ver.code ? ` <b class="stale">${t("ver.old", { d: ver.disk })}</b>` : "") : "");
 }
 
 /* ── 툴팁: data-tip="tip.키" 또는 문장 — 마우스를 올리거나 키보드로 초점을 주면 설명 ── */
@@ -725,7 +727,7 @@ async function viewCorr() {
 
 
 /* ── 연관 분석: 요인별 '위험 배수'(다른 조건이 같을 때 발생 위험이 몇 배인지) ───────── */
-const xN = (v) => v == null ? "–" : v >= 100 ? Math.round(v).toLocaleString() : v >= 10 ? v.toFixed(1) : v.toFixed(2);
+const xN = (v) => v == null || !isFinite(v) ? "–" : v >= 1000 ? ">1000" : v >= 100 ? Math.round(v).toLocaleString() : v >= 10 ? v.toFixed(1) : v < 0.001 ? "<0.001" : v.toFixed(2);
 const rngTxt = (lo, hi) => lo == null ? "" : `${xN(lo)}~${xN(hi)}`;
 const QL = (q) => t("as.ql" + q);                  // 하위 20% … 상위 20%
 
@@ -875,21 +877,27 @@ function drawAssocTemp(T) {
 
 function drawAssocVisits(V) {
   if (!V.available) { $("#as-visits").innerHTML = `<p class="small as-note">${t("as.li")}</p><p class="muted">${asReason(V)}</p>`; return; }
-  const rng = (d) => d.vmax == null ? t("as.vmore", { a: fmtNum(d.vmin) }) : t("as.vrange", { a: fmtNum(d.vmin), b: fmtNum(d.vmax) });
-  const q5 = V.dose[4], q1 = V.dose[0];
-  const vk = V.by_vehicle.filter((x) => x.sig && x.or > 1);
+  const VB = (q) => t("as.vb" + q);
+  const rng = (d) => d.q === 0 ? t("as.v0") : d.vmax == null ? t("as.vmore", { a: fmtNum(d.vmin) }) : t("as.vrange", { a: fmtNum(d.vmin), b: fmtNum(d.vmax) });
+  const ref = V.dose.filter((d) => d.ref), top = V.dose[V.dose.length - 1];
+  const refTxt = ref.length > 1 ? t("as.vrange", { a: 0, b: fmtNum(ref[ref.length - 1].vmax) }) : t("as.v0");
+  const vth = (x) => x.threshold > 0 ? t("as.vth", { n: fmtNum(x.threshold) }) : t("as.vth1");
+  const risk = V.by_vehicle.filter((x) => !x.response), resp = V.by_vehicle.filter((x) => x.response);
+  const vk = risk.filter((x) => x.sig && x.or > 1);
   let html = `<p class="small as-note">${t("as.li")}</p>` +
-    (q5.or ? verdict(t("as.visit.v", { a: fmtNum(q5.vmin), b: fmtNum(q1.vmax), rr: xN(q5.or), lo: xN(q5.lo), hi: xN(q5.hi) }) +
+    (top.or && !top.ref ? verdict(t("as.visit.v", { a: fmtNum(top.vmin), b: refTxt, rr: xN(top.or), lo: xN(top.lo), hi: xN(top.hi) }) +
       (vk.length ? " " + t("as.visit.v2", { l: vk.slice(0, 3).map((x) => `${esc(x.vehicle)} ×${xN(x.or)}`).join(", ") }) : "")) : "") +
     `<b>${t("as.dose")}</b>` +
-    forest(V.dose.map((d) => ({ label: `${rng(d)} <tspan class="m">${QL(d.q)}</tspan>`, v: d.or, lo: d.q === 1 ? null : d.lo,
-      hi: d.q === 1 ? null : d.hi, sig: d.sig, ref: d.q === 1, tip: t("as.cc", { a: d.cases, b: fmtNum(d.ctrls) }) }))) +
-    `<b>${t("as.byveh")}</b>` + forest(V.by_vehicle.map((x) => ({ label: `${esc(x.vehicle)} <tspan class="m">${t("as.vth", { n: fmtNum(x.threshold) })}</tspan>`,
-      v: x.or, lo: x.lo, hi: x.hi, sig: x.sig }))) + legendLine();
+    forest(V.dose.map((d) => ({ label: `${rng(d)} <tspan class="m">${VB(d.q)}</tspan>`, v: d.or, lo: d.ref ? null : d.lo,
+      hi: d.ref ? null : d.hi, sig: d.sig, ref: d.ref, tip: t("as.cc", { a: d.cases, b: fmtNum(d.ctrls) }) }))) +
+    `<b>${t("as.byveh")}</b>` + forest(risk.map((x) => ({ label: `${esc(x.vehicle)} <tspan class="m">${vth(x)}</tspan>`,
+      v: x.or, lo: x.lo, hi: x.hi, sig: x.sig }))) +
+    (resp.length ? `<b>${t("as.resp")}</b>` + forest(resp.map((x) => ({ label: `${esc(x.vehicle)} <tspan class="m">${vth(x)}</tspan>`,
+      v: x.or, lo: x.lo, hi: x.hi, sig: false }))) : "") + legendLine();
   const N = V.now;
   if (N && N.rows.length) html += `<b>${t("as.now", { a: N.from, b: N.to })}</b><div class="scroll"><table class="tbl small"><thead><tr><th>${t("as.now.li")}</th>
       <th>${t("as.now.n")}</th><th>${t("as.now.grp")}</th><th>${t("as.now.veh")}</th></tr></thead><tbody>` +
-    N.rows.map((r) => `<tr><td>${esc(r.address)}</td><td>${fmtNum(r.visits)}</td><td class="${r.group === 5 ? "bad" : ""}">${QL(r.group)}</td><td>${r.top.map(esc).join(", ")}</td></tr>`).join("") + "</tbody></table></div>";
+    N.rows.map((r) => `<tr><td>${esc(r.address)}</td><td>${fmtNum(r.visits)}</td><td class="${r.group >= V.nbins - 1 ? "bad" : ""}">${VB(r.group)}</td><td>${r.top.map(esc).join(", ")}</td></tr>`).join("") + "</tbody></table></div>";
   html += `<p class="as-note muted small">${t("as.visitnote", { a: V.coverage.from, b: V.coverage.to, w: V.coverage.weeks, c: V.cases, k: fmtNum(V.ctrls) })}</p>`;
   $("#as-visits").innerHTML = html;
 }

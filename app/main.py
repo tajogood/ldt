@@ -14,7 +14,8 @@ from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Str
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import analysis, assoc, birds, collect, db, explore, freshness, history, news, scheduler, weather, wild
+from . import analysis, assoc, birds, collect, db, explore, freshness, history, news, scheduler, wild
+from . import weather as weather_bf      # 과거 기온 백필(아래 /api/weather 함수 이름과 겹치지 않게)
 from .settings import VWORLD_KEY, WEB_DIR
 from .species import SPECIES, disease_code
 
@@ -23,7 +24,9 @@ app.add_middleware(GZipMiddleware, minimum_size=2000)   # 읍면동 경계 GeoJS
 db.init()
 
 
-@app.on_event("startup")
+_STARTED = db.now().isoformat(timespec="seconds")
+
+
 def _load_wild():
     try:
         r = wild.load()
@@ -33,10 +36,11 @@ def _load_wild():
         print("야생 검출 파일 읽기 실패:", e)
 
 
+@app.on_event("startup")
 def _start_auto_collect():
     scheduler.start()
     news.start()      # 뉴스 5분 · 공지 30분마다(NEWS_MONITOR=0 이면 꺼짐)
-    weather.start()   # 과거 발생 시기 기온만 골라 받기(연관 분석용, WEATHER_BACKFILL=0 이면 꺼짐)
+    weather_bf.start()   # 과거 발생 시기 기온만 골라 받기(연관 분석용, WEATHER_BACKFILL=0 이면 꺼짐)
     import threading
     threading.Thread(target=_load_wild, name="wild-files", daemon=True).start()   # data/files 의 야생 검출 목록
     try:              # 철새 이동 정보 파일이 있고 아직 안 넣었으면 넣기
@@ -201,6 +205,34 @@ def _hsp(species: str) -> str:
     return species
 
 
+def _git_version() -> str:
+    """지금 돌고 있는 코드의 git 커밋(짧은 해시). 화면에 보여 줘서 서버가 새 코드로 다시 켜졌는지 확인한다."""
+    from .settings import ROOT
+    try:
+        head = (ROOT / ".git" / "HEAD").read_text().strip()
+        if head.startswith("ref:"):
+            ref = head.split(" ", 1)[1]
+            f = ROOT / ".git" / ref
+            if f.exists():
+                return f.read_text().strip()[:7]
+            packed = ROOT / ".git" / "packed-refs"
+            for line in packed.read_text().splitlines() if packed.exists() else []:
+                if line.endswith(" " + ref):
+                    return line[:7]
+        return head[:7]
+    except OSError:
+        return "?"
+
+
+_VERSION = {"code": _git_version(), "started_at": None}
+
+
+@app.get("/api/version")
+def version():
+    _VERSION["started_at"] = _VERSION["started_at"] or _STARTED
+    return {**_VERSION, "disk": _git_version()}
+
+
 @app.post("/api/wild/load")
 def wild_load():
     """data/files 의 야생 검출 목록 파일(이름에 '야생')을 다시 읽는다."""
@@ -209,7 +241,7 @@ def wild_load():
 
 @app.get("/api/weather/backfill")
 def weather_backfill():
-    return weather.status()
+    return weather_bf.status()
 
 
 @app.get("/api/assoc")

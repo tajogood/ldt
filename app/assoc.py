@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import bisect
 import math
+import re
 import threading
 import time
 import traceback
@@ -33,6 +34,8 @@ MAX_SEASONS = 12
 LAGS = [(1, 7), (8, 14), (15, 21), (22, 28)]
 RADII = [10, 20, 30]
 TEMP_BINS = [(-99, -5), (-5, 0), (0, 5), (5, 10), (10, 15), (15, 99)]
+EXPO_WEEKS = (2, 3, 4)            # 차량 방문 노출: 발생 주의 2~4주 전(바로 앞 1주 제외)
+RESPONSE = re.compile(r"시료|방역|사체|살처분|매몰")   # 발생 뒤 대응으로 드나드는 차량(원인이 아니라 결과일 수 있음)
 MIN_POS = 15                       # 모형에 넣으려면 발생 주가 최소 이만큼 있어야 함
 EPV = 10                           # 모형 요인 하나당 필요한 발생 주 수
 MIN_UNITS = 30                     # 상대위험도를 내려면 노출 단위(시군·주)가 최소 이만큼
@@ -370,41 +373,51 @@ def visit_dose(species: str, P: dict) -> dict:
     for r in rows:
         wk[(r["place_id"], A._d(str(r["wk"])))][kinds.get(r["kind_id"], "?")] += r["n"] or 0
     months = set(P["months"])
-    weeks = sorted(w for w in cov if w.month in months and all(w - timedelta(days=7 * i) in cov for i in (1, 2, 3)))
+    # 노출 = 발생 주의 2~4주 전 방문(바로 앞 1주는 뺀다: 의심 신고 뒤 시료채취·방역 차량이 드나드는 기간이라 결과가 원인처럼 보임)
+    weeks = sorted(w for w in cov if w.month in months and all(w - timedelta(days=7 * i) in cov for i in EXPO_WEEKS))
     if not weeks:
         return {"available": False, "reason": "short_coverage"}
     sample = {p for p, _ in wk if p % k == 0}
 
     def expo(pid, w):
         tot: Counter = Counter()
-        for i in (1, 2, 3):
+        for i in EXPO_WEEKS:
             for v, n in wk.get((pid, w - timedelta(days=7 * i)), {}).items():
                 tot[v] += n
         return tot
-    cases = [expo(p, w) for (p, w) in case_pid if w in set(weeks)]
+    wset = set(weeks)
+    cases = [expo(p, w) for (p, w) in case_pid if w in wset]
     ctrls = [expo(p, w) for p in sample for w in weeks if (p, w) not in case_pid]
     if len(cases) < 5 or not ctrls:
         return {"available": False, "reason": "few_cases", "cases": len(cases)}
-    tot = lambda c: sum(c.values())  # noqa: E731
-    cuts = _quantiles([tot(c) for c in ctrls])
-    qc = Counter(_qbin(tot(c), cuts) for c in cases)
-    qk = Counter(_qbin(tot(c), cuts) for c in ctrls)
+    tot = lambda c: sum(n for v, n in c.items() if not RESPONSE.search(v))  # noqa: E731  대응 차량은 합계에서 뺀다
+    # 구간: 방문 없음 + 방문이 있던 리·주를 4등분(같은 값이 많아도 빈 구간이 생기지 않게 경계를 겹치지 않게)
+    pos = sorted(tot(c) for c in ctrls if tot(c) > 0)
+    cuts = sorted({pos[min(len(pos) - 1, int(len(pos) * i / 4))] for i in (1, 2, 3)}) if pos else []
+    binf = lambda v: 0 if v <= 0 else 1 + bisect.bisect_left(cuts, v)  # noqa: E731
+    nb = 2 + len(cuts)
+    qc = Counter(binf(tot(c)) for c in cases)
+    qk = Counter(binf(tot(c)) for c in ctrls)
+    ref = [0] if qc[0] >= 3 else [0, 1]          # 방문 없음 구간에 발생이 너무 적으면 다음 구간과 합쳐 기준으로
+    rc, rk = sum(qc[i] for i in ref), sum(qk[i] for i in ref)
     dose = []
-    for q in range(5):
-        lo = 0 if q == 0 else cuts[q - 1]
-        hi = cuts[q] if q < 4 else None
-        o = _or(qc[q], qk[q], qc[0], qk[0]) if q else {"or": 1.0}
-        dose.append({"q": q + 1, "vmin": round(lo), "vmax": round(hi) if hi is not None else None,
-                     "cases": qc[q], "ctrls": qk[q], **{x: o.get(x) for x in ("or", "lo", "hi", "sig")}})
+    bounds = [0, 0] + cuts
+    for q in range(nb):
+        lo = 0 if q == 0 else int(bounds[q]) + 1 if q > 1 else 1
+        hi = 0 if q == 0 else (int(cuts[q - 1]) if q - 1 < len(cuts) else None)
+        o = {"or": 1.0} if q in ref else _or(qc[q], qk[q], rc, rk)
+        dose.append({"q": q, "vmin": lo, "vmax": hi, "ref": q in ref, "cases": qc[q], "ctrls": qk[q],
+                     **{x: o.get(x) for x in ("or", "lo", "hi", "sig")}})
     vk = []
     for v in sorted({v for c in ctrls for v in c} | {v for c in cases for v in c}):
         cv = sorted(c.get(v, 0) for c in ctrls)
-        p75 = cv[int(len(cv) * 0.75)]
-        thr = p75 if p75 > 0 else 0
-        a = sum(1 for c in cases if c.get(v, 0) > thr); cc = len(cases) - a
-        b = sum(1 for c in ctrls if c.get(v, 0) > thr); d = len(ctrls) - b
-        vk.append({"vehicle": v, "threshold": round(thr), **_or(a, b, cc, d)})
-    vk.sort(key=lambda x: -(x["or"] or 0))
+        thr = cv[int(len(cv) * 0.75)]
+        a_ = sum(1 for c in cases if c.get(v, 0) > thr); cc = len(cases) - a_
+        b_ = sum(1 for c in ctrls if c.get(v, 0) > thr); d_ = len(ctrls) - b_
+        if a_ + b_ < 10:                      # 그 유형이 거의 안 다니면 건너뜀
+            continue
+        vk.append({"vehicle": v, "threshold": round(thr), "response": bool(RESPONSE.search(v)), **_or(a_, b_, cc, d_)})
+    vk.sort(key=lambda x: (x["response"], -(x["or"] or 0)))
     with db.session() as con:
         last = con.scalar("SELECT MAX(date) FROM vehicle_visit_day")
         now_rows = []
@@ -421,10 +434,10 @@ def visit_dose(species: str, P: dict) -> dict:
                 for r in con.rows(f"SELECT v.place_id, v.kind_id, SUM(v.n) AS n FROM vehicle_visit v WHERE v.date BETWEEN ? AND ? "
                                   f"AND v.place_id IN ({','.join('?' * len(ids))}){kc} GROUP BY v.place_id, v.kind_id", [d0, d1] + ids):
                     kinds_now[r["place_id"]][kinds.get(r["kind_id"], "?")] += r["n"]
-                now_rows = [{"address": addr.get(r["place_id"], "?"), "visits": r["n"], "group": _qbin(r["n"], cuts) + 1,
+                now_rows = [{"address": addr.get(r["place_id"], "?"), "visits": r["n"], "group": binf(r["n"] * len(EXPO_WEEKS) / 3),
                              "top": [v for v, _ in kinds_now[r["place_id"]].most_common(3)]} for r in top]
     now = {"from": d0.isoformat(), "to": d1.isoformat(), "rows": now_rows} if last else None
-    return {"available": True, "dose": dose, "by_vehicle": vk, "cases": len(cases), "ctrls": len(ctrls), "now": now,
+    return {"available": True, "dose": dose, "by_vehicle": vk, "cases": len(cases), "ctrls": len(ctrls), "now": now, "nbins": nb,
             "sample_every": k, "coverage": {"from": weeks[0].isoformat(), "to": weeks[-1].isoformat(), "weeks": len(weeks)}}
 
 
@@ -652,11 +665,20 @@ def model(species: str, P: dict) -> dict:
     if P.get("visit_cov") and P["visit_cov"]["cases"] >= MIN_POS:
         cand.append(cand[-1] + ["visits"])
     fits = []
+    unstable = []
     for feats in cand:
         rows, ys, keep = _design(P, feats, past)
         if sum(ys) < max(MIN_POS, EPV * len(feats)):     # 요인 하나당 발생 주 10개 이상(과적합 방지)
             continue
         cont = [FEATURES[f][1] for f in feats]
+        clip = []
+        for j in range(len(feats)):              # 극단값(몇몇 시군의 아주 큰 값)이 계산을 흔들지 않게 1·99 백분위로 자름
+            if cont[j]:
+                srt = sorted(r[j] for r in rows)
+                clip.append((srt[int(len(srt) * 0.01)], srt[min(len(srt) - 1, int(len(srt) * 0.99))]))
+            else:
+                clip.append(None)
+        rows = [[min(max(v, clip[j][0]), clip[j][1]) if clip[j] else v for j, v in enumerate(r)] for r in rows]
         mu = [sum(r[j] for r in rows) / len(rows) for j in range(len(feats))]
         sd = [math.sqrt(sum((r[j] - mu[j]) ** 2 for r in rows) / len(rows)) for j in range(len(feats))]
         if any(c and v < 1e-6 for c, v in zip(cont, sd)):        # 값이 거의 같은 연속 요인은 뺀다
@@ -664,6 +686,9 @@ def model(species: str, P: dict) -> dict:
         z = lambda r: [1.0] + [(r[j] - mu[j]) / sd[j] if cont[j] else r[j] for j in range(len(feats))]  # noqa: E731
         X = [z(r) for r in rows]
         f = logit_fit(X, ys)
+        if any(abs(b) > math.log(1000) for b in f["b"][1:]):
+            unstable.append(feats)
+            continue
         sc = [sum(b * x for b, x in zip(f["b"], xi)) for xi in X]
         # 시간 검증: 마지막 완결 시즌을 빼고 학습 → 그 시즌 예측력
         sm = cfg["season_start_month"]
@@ -686,9 +711,9 @@ def model(species: str, P: dict) -> dict:
                          "hi": round(math.exp(b + 1.96 * se), 2), "sig": abs(b) > 1.96 * se, "b": b})
         fits.append({"features": feats, "units": len(rows), "cases": sum(ys), "auc": _auc(sc, ys), "oot": oot,
                      "from": min(u["w"] for u in keep).isoformat(), "to": max(u["w"] for u in keep).isoformat(),
-                     "coef": coef, "_f": f, "_mu": mu, "_sd": sd, "_cont": cont})
+                     "coef": coef, "_f": f, "_mu": mu, "_sd": sd, "_cont": cont, "_clip": clip})
     if not fits:
-        return {"available": False, "reason": "few_cases"}
+        return {"available": False, "reason": "unstable" if unstable else "few_cases"}
     # 이번 주 예측: 이번 주 요인이 모두 있는 가장 풍부한 모형
     cur = [u for u in P["units"] if u["w"] == P["current"]]
     pred, used = [], None
@@ -697,7 +722,8 @@ def model(species: str, P: dict) -> dict:
         if len(rows) >= len(cur) * 0.8 and rows:
             used = m
             for r, u in zip(rows, keep):
-                x = [1.0] + [(r[j] - m["_mu"][j]) / m["_sd"][j] if m["_cont"][j] else r[j] for j in range(len(r))]
+                rc = [min(max(v, m["_clip"][j][0]), m["_clip"][j][1]) if m["_clip"][j] else v for j, v in enumerate(r)]
+                x = [1.0] + [(rc[j] - m["_mu"][j]) / m["_sd"][j] if m["_cont"][j] else rc[j] for j in range(len(rc))]
                 contrib = {m["features"][j]: m["_f"]["b"][j + 1] * x[j + 1] for j in range(len(r))}
                 g = P["regs"][u["k"]]
                 top = max(contrib.items(), key=lambda kv: kv[1])

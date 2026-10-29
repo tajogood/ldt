@@ -670,3 +670,28 @@ def test_weather_backfill_plans_only_outbreak_months(monkeypatch):
     assert n > 0
     weather.run(pause=0)
     assert len(calls) == n and weather.plan() == []      # 받은 구간은 다시 받지 않음
+
+
+def test_startup_hook_starts_background_work():
+    """서버 시작 훅이 자동 수집·뉴스·기온 백필을 띄우는 함수에 붙어 있는지(데코레이터가 다른 함수로 밀려나지 않게)."""
+    from app.main import app
+    names = [h.__name__ for h in app.router.on_startup]
+    assert "_start_auto_collect" in names
+
+
+def test_version_endpoint():
+    from fastapi.testclient import TestClient
+    from app.main import app
+    v = TestClient(app).get("/api/version").json()
+    assert v["code"] and v["started_at"]
+
+
+def test_startup_runs(monkeypatch):
+    """서버 시작 훅을 실제로 돌려 본다(이름 충돌·잘못된 데코레이터로 시작이 실패하지 않게)."""
+    from fastapi.testclient import TestClient
+    from app import main, news, scheduler, weather
+    monkeypatch.setattr(scheduler, "start", lambda: None)
+    monkeypatch.setattr(news, "start", lambda: None)
+    monkeypatch.setattr(weather, "start", lambda: None)
+    with TestClient(main.app) as c:
+        assert c.get("/api/weather/backfill").status_code == 200
