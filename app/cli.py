@@ -34,6 +34,11 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("--host", default="127.0.0.1")
     a = ap.parse_args(argv)
 
+    if a.cmd == "serve":
+        # 60초 안에 켜지지 않으면 어디서 멈췄는지(모든 스레드의 호출 위치)를 로그에 남긴다 — 켜지면 앱이 취소함
+        import faulthandler
+        faulthandler.dump_traceback_later(60, repeat=False)
+        print("DB 확인 중…", flush=True)
     db.init()
     if a.cmd == "init":
         print("DB 준비 완료")
@@ -70,7 +75,7 @@ def main(argv: list[str] | None = None) -> int:
     elif a.cmd == "serve":
         import uvicorn
 
-        print(f"http://{a.host}:{a.port} 에서 실행")
+        print(f"http://{a.host}:{a.port} 에서 실행 — 앱을 불러오는 중…", flush=True)
         uvicorn.run("app.main:app", host=a.host, port=a.port, reload=False)
     return 0
 

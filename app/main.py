@@ -38,6 +38,9 @@ def _load_wild():
 
 @app.on_event("startup")
 def _start_auto_collect():
+    import faulthandler
+    faulthandler.cancel_dump_traceback_later()   # 정상적으로 켜졌으니 '멈춤 진단' 취소
+    print("앱 준비 완료", flush=True)
     scheduler.start()
     news.start()      # 뉴스 5분 · 공지 30분마다(NEWS_MONITOR=0 이면 꺼짐)
     weather_bf.start()   # 과거 발생 시기 기온만 골라 받기(연관 분석용, WEATHER_BACKFILL=0 이면 꺼짐)

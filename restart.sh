@@ -9,7 +9,9 @@ PORT="${PORT:-$(grep -E '^PORT=' .env 2>/dev/null | cut -d= -f2)}"; PORT="${PORT
 
 if [ "${1:-}" = "pull" ]; then
   git pull --ff-only || { echo "git pull 실패 — 직접 고친 파일이 있으면 'git status' 로 확인하세요"; exit 1; }
+  exec ./restart.sh            # 이 스크립트도 바뀌었을 수 있으니 새 내용으로 다시 실행
 fi
+export PYTHONUNBUFFERED=1      # 로그가 바로바로 파일에 남게
 
 # 1) 지금 떠 있는 웹서버 끄기: run.sh 와 그 포트를 쓰는 프로세스
 pkill -f "app.cli serve" 2>/dev/null
