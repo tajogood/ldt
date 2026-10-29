@@ -221,3 +221,23 @@ button.toggle.on{background:#2a78d6;border-color:#2a78d6;color:#fff;font-weight:
 .ev-scroll{max-height:300px}
 #ev-list tr{cursor:pointer}
 #ev-list tr.sel td{background:var(--soft);font-weight:600}
+/* 연관 분석 */
+.as-intro{padding:0 4px}
+.as-intro .spin{display:inline-block;width:10px;height:10px;border:2px solid var(--line);border-top-color:var(--ink);border-radius:50%;animation:spin 1s linear infinite;vertical-align:-1px;margin-right:6px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.pad-s{padding:8px 16px}
+.as-model{display:grid;grid-template-columns:minmax(0,1fr);gap:0}
+.as-model .map{height:520px}
+@media (min-width:1100px){.as-model{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}.as-model>div+div{border-left:1px solid var(--soft)}}
+.forest{width:100%;height:auto;display:block;font-size:12px}
+.forest text{fill:var(--ink)} .forest .m{fill:var(--muted)}
+.forest line.ref{stroke:var(--muted);stroke-dasharray:3 3}
+.as-birds{display:grid;grid-template-columns:minmax(0,1fr);gap:0}
+@media (min-width:1100px){.as-birds{grid-template-columns:minmax(0,1.2fr) minmax(0,1fr)}}
+.as-sep{margin:8px 4px 0;font-size:15px;color:var(--muted);font-weight:600}
+table.heat td.sig{outline:2px solid var(--ink);outline-offset:-2px;font-weight:700}
+.as-note{margin:8px 0 0;line-height:1.55}
+table.tbl.small{font-size:12px}
+.legend-row span.chip{display:inline-flex;align-items:center;gap:4px;font-size:12px;margin-right:10px}
+.legend-row span.chip i{width:10px;height:10px;border-radius:50%;display:inline-block}
+#as-models tr.on td{font-weight:600;background:var(--soft)}

@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Str
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import analysis, birds, collect, db, explore, freshness, history, news, scheduler
+from . import analysis, assoc, birds, collect, db, explore, freshness, history, news, scheduler
 from .settings import VWORLD_KEY, WEB_DIR
 from .species import SPECIES, disease_code
 
@@ -187,6 +187,15 @@ def _hsp(species: str) -> str:
     if species not in SPECIES:
         raise HTTPException(400, "species: poultry | pig | cattle")
     return species
+
+
+@app.get("/api/assoc")
+def assoc_api(species: str = "poultry", disease: str | None = None):
+    """연관 분석 6종(종합 모형·야생 검출 시차·기온·차량 방문·농장 밀집도·철새). 처음엔 계산 중 상태를 돌려준다."""
+    if species not in SPECIES:
+        return {"status": "na"}
+    d = disease if disease not in (None, "", "all") else SPECIES[species]["main_disease"]
+    return assoc.get(species, d, wait=2)
 
 
 @app.get("/api/history/{kind}")

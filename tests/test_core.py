@@ -553,3 +553,59 @@ def test_explore_every_source_opens():
             assert r.status_code == 200, (s["id"], ep, r.text[:200])
     b = c.get("/api/explore/migratory_birds/table").json()
     assert b["table"] == "bird_track"
+
+
+def test_assoc_recovers_planted_effects():
+    """밀집도·주변 발생 효과를 심은 합성 자료에서 연관 분석이 그 방향을 되찾는지(질병 IB로 다른 테스트와 분리)."""
+    import math
+    import random
+    from app import assoc
+    rnd = random.Random(3)
+    now = db.now()
+    regs, rs, gc, evs = [], [], [], []
+    for i in range(40):
+        g = {"sido": "충청북도", "sigungu": f"연관{i:02d}군", "lat": rnd.uniform(35.0, 37.5), "lon": rnd.uniform(126.8, 128.8),
+             "farms": int(math.exp(rnd.gauss(3.0, 0.9))) + 2}
+        regs.append(g)
+        rs.append({"sido": g["sido"], "sigungu": g["sigungu"], "emd": "가면", "species": "poultry", "metric": "farms:닭",
+                   "value": g["farms"], "as_of": "2026-09", "source": analysis.FARM_SOURCE, "collected_at": now})
+        gc.append({"address": analysis.district_key(g["sido"], g["sigungu"]), "lat": g["lat"], "lon": g["lon"],
+                   "status": "OK", "provider": "test", "at": now})
+    uid = 0
+    obs = []
+    for y in range(2020, 2025):
+        d = date(y, 10, 1)
+        while d < date(y + 1, 4, 1):
+            for g in regs:
+                h = 0.0004 * g["farms"] ** 0.8
+                if any(1 <= (d - od).days <= 14 and geo.haversine_km(g["lat"], g["lon"], la, lo) <= 30 for od, la, lo in obs[-40:]):
+                    h *= 3
+                if rnd.random() < h:
+                    uid += 1
+                    obs.append((d, g["lat"], g["lon"]))
+                    evs.append({"uid": f"assoc{uid}", "kind": "outbreak", "disease": "IB", "species": "poultry", "date": d,
+                                "sido": g["sido"], "sigungu": g["sigungu"], "place": f"{g['sido']} {g['sigungu']} 가면 가리",
+                                "lat": g["lat"], "lon": g["lon"], "source": "test", "collected_at": now})
+            d += timedelta(days=1)
+    with db.session() as con:
+        db.upsert(con, "region_stat", rs)
+        db.upsert(con, "geo_cache", gc)
+        db.upsert(con, "event", evs)
+    r = assoc.compute("poultry", "IB")
+    assert r["model"]["available"], r["model"]
+    coef = {c["factor"]: c for c in r["model"]["models"][0]["coef"]}
+    assert coef["density"]["or"] > 1.3 and coef["density"]["sig"]
+    assert coef["neighbor_outbreak"]["or"] > 1.3
+    assert r["model"]["pred"] and 0 < r["model"]["pred"][0]["p"] < 1
+    dens = {f["factor"]: f for f in r["density"]["factors"]}
+    assert dens["farms"]["rows"][4]["rr"] > dens["farms"]["rows"][0]["rr"]
+    assert r["wild"]["available"] is False or len(r["wild"]["grid"]) == 3
+    assert r["temp"]["available"] is False and r["visits"]["available"] is False
+    # API: 처음엔 계산 중, 끝나면 결과
+    from fastapi.testclient import TestClient
+    from app.main import app
+    c = TestClient(app)
+    d = c.get("/api/assoc?species=poultry&disease=IB").json()
+    assert d["status"] in ("computing", "ready", "updating")
+    assert assoc.get("poultry", "IB", wait=60)["status"] == "ready"
+    assert c.get("/api/assoc?species=all").json()["status"] == "na"

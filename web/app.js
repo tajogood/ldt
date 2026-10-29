@@ -678,6 +678,7 @@ async function loadVisits(id, km) {
 /* ── 3. 연관 분석 ─────────────────────────────────────────────────────── */
 async function viewCorr() {
   const sp = S.species === "all" ? "poultry" : S.species;
+  loadAssoc(sp, S.tlDisease || CFG.species[sp].main_disease);
   if (!S.tlSeason) { const se = await api(`/api/seasons?species=${sp}&disease=${S.tlDisease || CFG.species[sp].main_disease}`); S.tlSeason = se.items[0]?.year || null; }
   const sq = `${S.tlSeason ? "&season=" + S.tlSeason : ""}&disease=${S.tlDisease || CFG.species[sp].main_disease}`;
   const [series, knox, risk, wx] = await Promise.all([api(`/api/series?species=${sp}${sq}`),
@@ -720,6 +721,155 @@ async function viewCorr() {
     options: { plugins: { cursorLine: false, tooltip: { mode: "index", intersect: false } }, interaction: { mode: "index", intersect: false },
       scales: { y: { beginAtZero: true } } } });
   $("#visit-cov").textContent = vdates.length ? t("visit.cov", { a: vdates[0], b: vdates[vdates.length - 1], n: vdates.length }) : t("visit.none");
+}
+
+
+/* ── 연관 분석(요인별 상대위험도·오즈비, 종합 모형) ───────────────────── */
+const AS_FAC = (f, c) => {
+  const base = t("asf." + f);
+  if (!c || !c.continuous) return base;
+  const sd = f === "temperature" ? `${(+c.sd).toFixed(1)}℃` : f === "duck_share" ? `${Math.round(c.sd * 100)}%p` : t("as.sd1");
+  return `${base} <tspan class="m">(+${sd})</tspan>`;
+};
+
+// 숲 그림(SVG): 행마다 점추정과 95% 신뢰구간을 로그 축에 그린다
+function forest(rows, opts = {}) {
+  const ok = rows.filter((r) => r.v != null);
+  if (!ok.length) return `<p class="muted small">${t("as.nodata")}</p>`;
+  const lo = Math.max(0.05, Math.min(0.5, ...ok.map((r) => (r.lo ?? r.v) || 0.05)));
+  const hi = Math.min(50, Math.max(2, ...ok.map((r) => r.hi ?? r.v)));
+  const L = 210, R = 520, W = 600, H = rows.length * 26 + 28;
+  const X = (v) => L + (Math.log(Math.min(hi, Math.max(lo, v))) - Math.log(lo)) / (Math.log(hi) - Math.log(lo)) * (R - L);
+  const ticks = [0.1, 0.2, 0.5, 1, 2, 5, 10, 20].filter((x) => x >= lo && x <= hi);
+  const col = (r) => r.ref ? "var(--muted)" : r.sig ? (r.v > 1 ? "#B42318" : "#1D4ED8") : "#8A8F8C";
+  const body = rows.map((r, i) => {
+    const y = 18 + i * 26;
+    const lab = `<text x="${L - 8}" y="${y + 4}" text-anchor="end">${r.label}</text>`;
+    if (r.v == null) return lab + `<text x="${L}" y="${y + 4}" class="m">${r.note || t("as.few")}</text>`;
+    const ci = r.lo != null ? `<line x1="${X(r.lo)}" x2="${X(r.hi)}" y1="${y}" y2="${y}" stroke="${col(r)}" stroke-width="2.5"/>` : "";
+    return lab + ci + `<circle cx="${X(r.v)}" cy="${y}" r="${r.ref ? 4 : 5.5}" fill="${col(r)}"><title>${esc(r.tip || "")}</title></circle>` +
+      `<text x="${R + 8}" y="${y + 4}" ${r.sig ? 'font-weight="700"' : 'class="m"'}>${r.ref ? t("as.ref") : r.v.toFixed(2)}${r.lo != null && !r.ref ? ` <tspan class="m" font-weight="400">(${r.lo}–${r.hi})</tspan>` : ""}</text>`;
+  }).join("");
+  const axis = ticks.map((x) => `<line x1="${X(x)}" x2="${X(x)}" y1="6" y2="${H - 16}" stroke="var(--soft)"/><text x="${X(x)}" y="${H - 2}" text-anchor="middle" class="m">${x}</text>`).join("");
+  return `<svg class="forest" viewBox="0 0 ${W + 70} ${H}" role="img">${axis}<line class="ref" x1="${X(1)}" x2="${X(1)}" y1="4" y2="${H - 16}"/>${body}</svg>`;
+}
+
+async function loadAssoc(sp, dis) {
+  clearTimeout(S.assocPoll);
+  if (S.species === "all") { $("#as-status").textContent = t("as.pickspecies"); return; }
+  const d = await api(`/api/assoc?species=${sp}&disease=${dis}`).catch((e) => ({ status: "error", error: String(e) }));
+  if (S.view !== "corr") return;
+  if (d.status === "computing" || d.status === "updating") S.assocPoll = setTimeout(() => S.view === "corr" && loadAssoc(sp, dis), 4000);
+  if (d.status === "computing") {
+    $("#as-status").innerHTML = `<span class="spin"></span>${t("as.computing")}`;
+    ["#as-forest", "#as-wild", "#as-visits", "#as-density", "#as-birds", "#as-temp"].forEach((id) => { $(id).innerHTML = `<p class="muted">${t("as.wait")}</p>`; });
+    return;
+  }
+  if (d.status === "na" || d.error) { $("#as-status").textContent = d.error ? t("as.error", { e: d.error }) : t("as.pickspecies"); return; }
+  if (d.empty) { $("#as-status").textContent = t("as.empty"); return; }
+  $("#as-status").innerHTML = (d.status === "updating" ? `<span class="spin"></span>${t("as.updating")} · ` : "") +
+    t("as.basis", { r: fmtNum(d.regions), u: fmtNum(d.units), c: fmtNum(d.cases), s: d.seasons,
+      m: d.months.map((m) => S.lang === "en" ? m : m + "월").join(", "), dis: dis, sec: d.sec });
+  drawAssocModel(d.model || {});
+  drawAssocWild(d.wild || {});
+  drawAssocTemp(d.temp || {});
+  drawAssocVisits(d.visits || {});
+  drawAssocDensity(d.density || {});
+  drawAssocBirds(d.birds || {});
+}
+
+const asReason = (x) => t("as.r." + (x.reason || "error"), { e: x.error || "", n: x.cases ?? "" });
+
+async function drawAssocModel(M) {
+  if (!M.available) { $("#as-forest").innerHTML = `<p class="muted">${asReason(M)}</p>`; $("#as-models").innerHTML = ""; $("#as-pred").innerHTML = ""; $("#as-model-sum").textContent = ""; return; }
+  const best = M.models[M.best];
+  $("#as-forest").innerHTML = forest(best.coef.map((c) => ({ label: AS_FAC(c.factor, c), v: c.or, lo: c.lo, hi: c.hi, sig: c.sig,
+    tip: `OR ${c.or} (${c.lo}–${c.hi})` })));
+  $("#as-model-sum").textContent = t("as.modelsum", { a: best.auc ?? "–", o: best.oot ? `${best.oot.auc} (${best.oot.season})` : "–" });
+  $("#as-models").innerHTML = `<thead><tr><th>${t("as.m.model")}</th><th>${t("as.m.period")}</th><th>${t("as.m.units")}</th><th>${t("as.m.cases")}</th>
+    <th data-tip="tip.as.auc">AUC</th><th data-tip="tip.as.oot">${t("as.m.oot")}</th></tr></thead><tbody>` +
+    M.models.map((m, i) => `<tr${i === M.best ? ' class="on"' : ""}><td>${i === 0 ? t("as.m.base") : "+ " + m.features.slice(M.models[i - 1].features.length).map((f) => t("asf." + f)).join(", ")}</td>
+      <td class="nowrap">${m.from.slice(0, 7)} ~ ${m.to.slice(0, 7)}</td><td>${fmtNum(m.units)}</td><td>${fmtNum(m.cases)}</td>
+      <td>${m.auc ?? "–"}</td><td>${m.oot ? `${m.oot.auc} <span class="muted">${m.oot.season}</span>` : "–"}</td></tr>`).join("") + "</tbody>";
+  const P = M.pred || [];
+  $("#as-pred-h").textContent = P.length ? t("as.predh", { w: M.week, m: M.pred_model === 0 ? t("as.m.base") : t("as.m.n", { n: M.models[M.pred_model].features.length }) }) : t("as.nopred");
+  const fac = (f) => f ? t("asf." + f) : "–";
+  $("#as-pred").innerHTML = P.length ? `<thead><tr><th>${t("th.rank")}</th><th>${t("th.region")}</th><th data-tip="tip.as.p">${t("as.p")}</th>
+    <th data-tip="tip.as.rel">${t("as.rel")}</th><th>${t("th.factor")}</th></tr></thead><tbody>` +
+    P.slice(0, 10).map((r, i) => `<tr><td>${i + 1}</td><td><b>${esc(r.region)}</b></td><td>${(r.p * 100).toFixed(2)}%</td><td>×${r.rel}</td><td>${fac(r.top)}</td></tr>`).join("") + "</tbody>" : "";
+  const m = S.maps.assoc ||= await makeMap($("#map-assoc"));
+  const rels = P.map((r) => r.rel).sort((a, b) => a - b);
+  const q = (p) => rels[Math.min(rels.length - 1, Math.floor(rels.length * p))] || 1;
+  const cuts = [q(0.5), q(0.75), q(0.9)];
+  const RAMP = ["#F2D98C", "#EDA100", "#E0611A", "#B42318"];
+  const ci = (v) => cuts.filter((c) => v > c).length;
+  m.dots("pred", P.map((r) => ({ lat: r.lat, lon: r.lon, r: 4 + 9 * Math.sqrt(Math.min(r.rel, 6) / 6), color: RAMP[ci(r.rel)], opacity: 0.85, z: 3,
+    title: `${r.region} · ${t("as.p")} ${(r.p * 100).toFixed(2)}% · ${t("as.rel")} ×${r.rel} · ${fac(r.top)}` })));
+  $("#as-pred-legend").innerHTML = P.length ? `<span class="muted small">${t("as.rel")}</span>` + RAMP.map((c, i) =>
+    `<span class="chip"><i style="background:${c}"></i>${i === 0 ? "≤×" + cuts[0] : i === 3 ? ">×" + cuts[2] : `×${cuts[i - 1]}–${cuts[i]}`}</span>`).join("") : "";
+}
+
+function drawAssocWild(W) {
+  if (!W.available) { $("#as-wild").innerHTML = `<p class="muted">${asReason(W)}</p>`; return; }
+  const max = Math.max(2, ...W.grid.flatMap((g) => g.cells.map((c) => c.rr || 0)));
+  const cell = (c) => {
+    if (c.rr == null) return `<td class="muted" title="${t("as.few")}">–</td>`;
+    const a = c.rr > 1 ? Math.min(1, Math.log(c.rr) / Math.log(max)) : 0;
+    return `<td class="${c.sig ? "sig" : ""}" style="background:${c.rr > 1 ? `rgba(180,35,24,${(0.1 + 0.8 * a).toFixed(2)})` : "var(--soft)"};color:${a > 0.5 ? "#fff" : "inherit"}"
+      title="${t("as.cellTip", { rr: c.rr, lo: c.lo, hi: c.hi, a: c.a, n1: fmtNum(c.n1), r1: c.rate1, r0: c.rate0 })}">×${c.rr}</td>`;
+  };
+  $("#as-wild").innerHTML = `<table class="heat as-grid"><thead><tr><th></th>${W.grid[0].cells.map((c) => `<th>${t("as.lagd", { d: c.lag })}</th>`).join("")}</tr></thead>
+    <tbody>${W.grid.map((g) => `<tr><th>${t("as.within", { km: g.km })}</th>${g.cells.map(cell).join("")}</tr>`).join("")}</tbody></table>
+    <p class="as-note muted small">${t("as.wildnote", { n: fmtNum(W.wild_events), u: fmtNum(W.units), c: fmtNum(W.cases) })}</p>`;
+}
+
+function drawAssocTemp(T) {
+  if (!T.available) { clearChart("chart-as-temp"); $("#as-temp").innerHTML = asReason(T) + (T.coverage ? "" : ""); return; }
+  const lab = (b) => b.tmin <= -99 ? `< ${b.tmax}℃` : b.tmax >= 99 ? `≥ ${b.tmin}℃` : `${b.tmin}~${b.tmax}℃`;
+  const bs = T.bins.filter((b) => b.units);
+  chart("chart-as-temp", { type: "bar", data: { labels: bs.map(lab), datasets: [{ label: t("as.rate"), data: bs.map((b) => b.rate1 ?? 0),
+    backgroundColor: bs.map((b) => b.ref ? "#8A8F8C" : b.sig && b.rr > 1 ? "#B42318" : "#E8A39B") }] },
+    options: { plugins: { legend: { display: false }, tooltip: { callbacks: { afterLabel: (c) => { const b = bs[c.dataIndex];
+      return b.ref ? t("as.ref") : b.rr != null ? `RR ×${b.rr} (${b.lo ?? "–"}–${b.hi ?? "–"}) · ${t("as.units", { u: fmtNum(b.units), c: b.cases })}` : t("as.few"); } } } },
+      scales: { y: { beginAtZero: true, title: { display: true, text: t("as.rate") } }, x: { title: { display: true, text: t("as.tempx") } } } } });
+  const c = T.coverage;
+  $("#as-temp").innerHTML = t("as.tempnote", { a: c?.from || "–", b: c?.to || "–", c: c?.cases ?? "–" });
+}
+
+function drawAssocVisits(V) {
+  if (!V.available) { $("#as-visits").innerHTML = `<p class="muted">${asReason(V)}</p>`; return; }
+  const rng = (d) => d.vmax == null ? `${fmtNum(d.vmin)}+` : `${fmtNum(d.vmin)}–${fmtNum(d.vmax)}`;
+  $("#as-visits").innerHTML = `<b>${t("as.dose")}</b>` +
+    forest(V.dose.map((d) => ({ label: `${t("as.qn", { q: d.q })} <tspan class="m">${rng(d)}${t("as.times")}</tspan>`, v: d.or, lo: d.q === 1 ? null : d.lo,
+      hi: d.q === 1 ? null : d.hi, sig: d.sig, ref: d.q === 1, tip: `${t("as.cases")} ${d.cases} / ${t("as.ctrls")} ${d.ctrls}` }))) +
+    `<b>${t("as.byveh")}</b>` + forest(V.by_vehicle.map((x) => ({ label: esc(x.vehicle), v: x.or, lo: x.lo, hi: x.hi, sig: x.sig,
+      tip: t("as.vehtip", { th: x.threshold }) }))) +
+    `<p class="as-note muted small">${t("as.visitnote", { a: V.coverage.from, b: V.coverage.to, w: V.coverage.weeks, c: V.cases, k: fmtNum(V.ctrls) })}</p>`;
+}
+
+function drawAssocDensity(D) {
+  if (!D.available) { $("#as-density").innerHTML = `<p class="muted">${asReason(D)}</p>`; return; }
+  const fmtv = (f, v) => v == null ? "–" : f === "duck_share" ? `${Math.round(v * 100)}%` : fmtNum(Math.round(v));
+  $("#as-density").innerHTML = D.factors.map((F) => `<b>${t("asd." + F.factor)}</b>` + forest(F.rows.map((r) => ({
+    label: `${t("as.qn", { q: r.q })} <tspan class="m">${fmtv(F.factor, r.vmin)}–${fmtv(F.factor, r.vmax)}</tspan>`,
+    v: r.rr, lo: r.q === 1 ? null : r.lo, hi: r.q === 1 ? null : r.hi, sig: r.sig, ref: r.q === 1,
+    tip: `${t("as.regions", { n: r.regions })} · ${t("as.units", { u: fmtNum(r.units), c: r.cases })}` })))).join("") +
+    `<p class="as-note muted small">${t("as.densnote")}</p>`;
+}
+
+function drawAssocBirds(B) {
+  if (!B.available) { clearChart("chart-as-birds"); $("#as-birds").innerHTML = `<p class="muted">${asReason(B)}</p>`; return; }
+  const wk = B.weeks.map((w) => { const d = new Date(Date.UTC(2026, 0, 1 + w * 7)); return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`; });
+  chart("chart-as-birds", { type: "bar", data: { labels: wk, datasets: [
+    { type: "bar", label: t("as.b.ob"), data: B.outbreaks, backgroundColor: "#B42318", yAxisID: "y" },
+    { type: "line", label: t("as.b.dep"), data: B.departs, borderColor: "#1D4ED8", backgroundColor: "#1D4ED8", pointRadius: 2, yAxisID: "y1" }] },
+    options: { scales: { y: { beginAtZero: true, title: { display: true, text: t("as.b.ob") } },
+      y1: { beginAtZero: true, position: "right", grid: { drawOnChartArea: false }, title: { display: true, text: t("as.b.dep") } } } } });
+  $("#as-birds").innerHTML = `<table class="tbl small"><thead><tr><th>${t("as.b.season")}</th><th>${t("as.b.tracks")}</th><th>${t("as.b.med")}</th>
+    <th>${t("as.b.p90")}</th><th data-tip="tip.as.lag">${t("as.b.lag")}</th><th>${t("as.b.after")}</th></tr></thead><tbody>` +
+    B.rows.map((r) => `<tr><td>${r.season}</td><td>${r.tracks}</td><td>${r.depart_median.slice(5)}</td><td>${r.p90 ? r.p90.slice(5) : "–"}</td>
+      <td>${r.lag_p90 ?? "–"}${r.lag_p90 != null ? t("as.days") : ""}</td><td>${r.after_median}/${r.outbreaks}</td></tr>`).join("") + "</tbody></table>" +
+    `<p class="as-note muted small">${B.lag_median != null ? t("as.b.sum", { m: B.lag_median, a: B.lag_range[0], b: B.lag_range[1] }) : ""} ${t("as.b.note")}</p>`;
 }
 
 function drawWx(rowsAll) {

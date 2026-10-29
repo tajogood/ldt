@@ -111,6 +111,37 @@
 
   <!-- 3. 연관 분석 -->
   <section id="view-corr" class="view" hidden>
+    <div class="as-intro muted small" id="as-status"></div>
+    <!-- 6. 종합 위험 모형 -->
+    <div class="card">
+      <div class="card-h"><h2 data-i18n="as.model">종합 위험 모형 — 요인을 함께 넣은 로지스틱 회귀</h2><span class="muted small" id="as-model-sum"></span></div>
+      <div class="as-model">
+        <div><div class="pad-s muted small" id="as-pred-h"></div><div class="map" id="map-assoc"></div><div class="legend-row" id="as-pred-legend"></div></div>
+        <div>
+          <div class="pad-s"><b data-i18n="as.or">요인별 오즈비 (95% 신뢰구간)</b> <span class="muted small" data-i18n="as.orhint">1보다 크면 발생 위험 증가, 막대가 1을 넘지 않으면 통계적으로 뚜렷함</span></div>
+          <div id="as-forest" class="pad-s"></div>
+          <div class="scroll"><table class="tbl small" id="as-models"></table></div>
+          <div class="pad-s"><b data-i18n="as.top">이번 주 예측 상위 시군</b></div>
+          <div class="scroll"><table class="tbl" id="as-pred"></table></div>
+        </div>
+      </div>
+      <p class="pad muted small" data-i18n="as.note">관찰 자료로 계산한 연관이며 원인을 증명하지 않습니다. 분석 단위는 시군 × 주이고, 각 주의 요인은 그 주 이전 자료로만 만듭니다.</p>
+    </div>
+    <div class="row">
+      <div class="card grow"><div class="card-h"><h2 data-i18n="as.wild">1. 야생 검출 → 농장 발생 시차</h2></div>
+        <div class="pad" id="as-wild"></div></div>
+      <div class="card grow"><div class="card-h"><h2 data-i18n="as.temp">2. 기온과 발생</h2></div>
+        <div class="chart"><canvas id="chart-as-temp"></canvas></div><div class="pad muted small" id="as-temp"></div></div>
+    </div>
+    <div class="row">
+      <div class="card grow"><div class="card-h"><h2 data-i18n="as.visits">3. 축산차량 방문량과 발생 (리 단위)</h2></div>
+        <div class="pad" id="as-visits"></div></div>
+      <div class="card grow"><div class="card-h"><h2 data-i18n="as.density">4. 농장 밀집도·규모·오리 비중</h2></div>
+        <div class="pad" id="as-density"></div></div>
+    </div>
+    <div class="card"><div class="card-h"><h2 data-i18n="as.birds">5. 철새 북상 시기와 시즌 종료</h2></div>
+      <div class="as-birds"><div class="chart"><canvas id="chart-as-birds"></canvas></div><div class="scroll pad-s" id="as-birds"></div></div></div>
+    <h3 class="as-sep" data-i18n="as.trends">추이 보기</h3>
     <div class="row">
       <div class="card grow"><div class="card-h"><h2 data-i18n="corr.wildfarm">야생 검출 vs 농장 발생 (주간)</h2></div><div class="chart"><canvas id="chart-corr"></canvas></div><div class="fresh" id="fr-corr"></div></div>
       <div class="card grow"><div class="card-h"><h2 data-i18n="corr.wx">기상 — 최근 60일</h2>
