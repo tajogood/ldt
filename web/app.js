@@ -587,7 +587,9 @@ function renderList() {
     <td>${e.cluster ? "#" + e.cluster : ""}</td></tr>`).join("") || `<tr><td colspan="7" class="muted">${t("tl.none")}</td></tr>`;
   $("#ev-list").querySelectorAll("tr[data-id]").forEach((tr) => tr.onclick = () => {
     const e = TL.byId[+tr.dataset.id]; TL.cursor = e.day; $("#tl-slider").value = e.day; renderFrame(); openEvent(e.id, false);
-    $("#map-track").scrollIntoView({ behavior: "smooth", block: "center" }); });
+    $("#ev-list").querySelectorAll("tr.sel").forEach((x) => x.classList.remove("sel")); tr.classList.add("sel");
+    // 지도가 화면 위로 밀려나 있을 때만 지도가 보이게 올린다(목록은 지도 바로 아래라 함께 보임)
+    if ($("#map-track").getBoundingClientRect().top < 0) $("#map-track").scrollIntoView({ behavior: "smooth", block: "start" }); });
 }
 
 function stopPlay() { clearInterval(TL.timer); TL.timer = null; $("#tl-play").textContent = "▶"; }

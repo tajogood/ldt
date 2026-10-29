@@ -218,3 +218,6 @@ button.toggle.on{background:#2a78d6;border-color:#2a78d6;color:#fff;font-weight:
   .dash-grid .g-weekly .chart{flex:1 1 auto;height:auto;min-height:200px}
 }
 .hint p{margin:0 0 10px;line-height:1.6}
+.ev-scroll{max-height:300px}
+#ev-list tr{cursor:pointer}
+#ev-list tr.sel td{background:var(--soft);font-weight:600}
