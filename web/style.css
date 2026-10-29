@@ -241,3 +241,6 @@ table.tbl.small{font-size:12px}
 .legend-row span.chip{display:inline-flex;align-items:center;gap:4px;font-size:12px;margin-right:10px}
 .legend-row span.chip i{width:10px;height:10px;border-radius:50%;display:inline-block}
 #as-models tr.on td{font-weight:600;background:var(--soft)}
+.as-verdict{margin:4px 0 10px;padding:10px 12px;background:var(--soft);border-radius:8px;line-height:1.6;font-size:14px}
+.as-how{margin:6px 0 10px;line-height:1.55}
+#as-visits>b,#as-density>b{display:block;margin-top:10px}

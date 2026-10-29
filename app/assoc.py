@@ -312,6 +312,8 @@ def wild_lag(P: dict) -> dict:
     us = [u for u in P["units"] if u["w"] < P["current"]]
     if not P["wild"]:
         return {"available": False, "reason": "no_wild"}
+    if len(P["wild"]) < 20:
+        return {"available": False, "reason": "few_wild", "wild_events": len(P["wild"])}
     grid = []
     for r in RADII:
         row = []
@@ -329,7 +331,8 @@ def wild_lag(P: dict) -> dict:
 def temperature(P: dict) -> dict:
     us = [u for u in P["units"] if u["w"] < P["current"] and u["temp"] is not None]
     if not us or sum(u["y"] for u in us) < 5:
-        return {"available": False, "reason": "no_weather", "coverage": P.get("temp_cov")}
+        from . import weather
+        return {"available": False, "reason": "no_weather", "coverage": P.get("temp_cov"), "backfill": weather.status()}
     bins = []
     for lo, hi in TEMP_BINS:
         g = [u for u in us if lo <= u["temp"] < hi]
@@ -402,7 +405,26 @@ def visit_dose(species: str, P: dict) -> dict:
         b = sum(1 for c in ctrls if c.get(v, 0) > thr); d = len(ctrls) - b
         vk.append({"vehicle": v, "threshold": round(thr), **_or(a, b, cc, d)})
     vk.sort(key=lambda x: -(x["or"] or 0))
-    return {"available": True, "dose": dose, "by_vehicle": vk, "cases": len(cases), "ctrls": len(ctrls),
+    with db.session() as con:
+        last = con.scalar("SELECT MAX(date) FROM vehicle_visit_day")
+        now_rows = []
+        if last:
+            d1 = A._d(str(last))
+            d0 = d1 - timedelta(days=20)
+            top = con.rows(f"SELECT v.place_id, SUM(v.n) AS n FROM vehicle_visit v WHERE v.date BETWEEN ? AND ?{kc} "
+                           f"GROUP BY v.place_id ORDER BY SUM(v.n) DESC LIMIT 15", [d0, d1])
+            if top:
+                ids = [r["place_id"] for r in top]
+                addr = {r["id"]: r["address"] for r in con.rows(
+                    f"SELECT id, address FROM visit_place WHERE id IN ({','.join('?' * len(ids))})", ids)}
+                kinds_now = defaultdict(Counter)
+                for r in con.rows(f"SELECT v.place_id, v.kind_id, SUM(v.n) AS n FROM vehicle_visit v WHERE v.date BETWEEN ? AND ? "
+                                  f"AND v.place_id IN ({','.join('?' * len(ids))}){kc} GROUP BY v.place_id, v.kind_id", [d0, d1] + ids):
+                    kinds_now[r["place_id"]][kinds.get(r["kind_id"], "?")] += r["n"]
+                now_rows = [{"address": addr.get(r["place_id"], "?"), "visits": r["n"], "group": _qbin(r["n"], cuts) + 1,
+                             "top": [v for v, _ in kinds_now[r["place_id"]].most_common(3)]} for r in top]
+    now = {"from": d0.isoformat(), "to": d1.isoformat(), "rows": now_rows} if last else None
+    return {"available": True, "dose": dose, "by_vehicle": vk, "cases": len(cases), "ctrls": len(ctrls), "now": now,
             "sample_every": k, "coverage": {"from": weeks[0].isoformat(), "to": weeks[-1].isoformat(), "weeks": len(weeks)}}
 
 
@@ -431,7 +453,9 @@ def density(P: dict) -> dict:
             rows.append({"q": i + 1, "vmin": round(min(vs), 3) if vs else None, "vmax": round(max(vs), 3) if vs else None,
                          "regions": len(vs), "cases": cnt[i][0], "units": cnt[i][1],
                          **{x: r.get(x) for x in ("rr", "lo", "hi", "rate1", "sig")}})
-        out.append({"factor": lab, "rows": rows})
+        hiq = max(range(1, 5), key=lambda i: rows[i]["rr"] or 0)
+        names = sorted((k for k in q if q[k] == hiq), key=lambda k: -vals[k])
+        out.append({"factor": lab, "rows": rows, "top_q": hiq + 1, "top_regions": names[:15], "top_n": len(names)})
     return {"available": bool(out), "factors": out, "regions": len(regs)}
 
 
@@ -506,12 +530,26 @@ def _inv(M: list[list[float]]) -> list[list[float]]:
     return [[cols[j][i] for j in range(n)] for i in range(n)]
 
 
-def logit_fit(X: list[list[float]], y: list[int], ridge: float = 1.0, iters: int = 25) -> dict:
-    """IRLS 로지스틱 회귀(절편 제외 계수에 약한 L2 — 완전분리 방지). X 첫 열은 1(절편)."""
+def _pll(X, y, b, ridge):
+    """벌점 로그우도(클수록 좋음). log(1+e^η)는 넘침 없이 계산."""
+    ll = 0.0
+    for xi, yi in zip(X, y):
+        eta = sum(bj * xj for bj, xj in zip(b, xi))
+        ll += yi * eta - (eta + math.log1p(math.exp(-eta)) if eta > 0 else math.log1p(math.exp(eta)))
+    return ll - ridge / 2 * sum(bj * bj for bj in b[1:])
+
+
+def logit_fit(X: list[list[float]], y: list[int], ridge: float = 1.0, iters: int = 40) -> dict:
+    """뉴턴-랩슨 로지스틱 회귀(절편 제외 계수에 약한 L2 — 완전분리 방지). X 첫 열은 1(절편).
+
+    한 걸음이 벌점 로그우도를 낮추면 걸음을 반씩 줄인다(발생이 드문 자료에서 계수가 발산하는 것을 막음).
+    """
     p = len(X[0])
     b = [0.0] * p
     ybar = sum(y) / len(y)
     b[0] = math.log(max(ybar, 1e-6) / max(1 - ybar, 1e-6))
+    ll = _pll(X, y, b, ridge)
+    H = [[1.0 if i == j else 0.0 for j in range(p)] for i in range(p)]
     for _ in range(iters):
         H = [[0.0] * p for _ in range(p)]
         g = [0.0] * p
@@ -536,11 +574,23 @@ def logit_fit(X: list[list[float]], y: list[int], ridge: float = 1.0, iters: int
                 H[j][j] += ridge
                 g[j] -= ridge * b[j]
         step = _solve(H, g)
-        b = [bj + sj for bj, sj in zip(b, step)]
-        if max(abs(s) for s in step) < 1e-6:
+        mx = max(abs(s) for s in step)
+        if mx > 3:                                   # 한 번에 너무 멀리 가지 않게
+            step = [s * 3 / mx for s in step]
+        t = 1.0
+        for _h in range(30):
+            nb = [bj + t * sj for bj, sj in zip(b, step)]
+            nll = _pll(X, y, nb, ridge)
+            if nll >= ll - 1e-9:
+                break
+            t /= 2
+        else:
+            break
+        b, ll = nb, nll
+        if max(abs(t * s) for s in step) < 1e-6:
             break
     cov = _inv(H)
-    return {"b": b, "se": [math.sqrt(max(cov[i][i], 0)) for i in range(p)]}
+    return {"b": b, "se": [math.sqrt(max(cov[i][i], 0)) for i in range(p)], "ll": ll}
 
 
 def _auc(scores: list[float], y: list[int]) -> float | None:
@@ -590,9 +640,12 @@ def model(species: str, P: dict) -> dict:
     base = [f for f in ("density", "heads_per_farm", "duck_share") if P["have_farms"]
             and sum(1 for g in P["regs"].values() if FEATURES[f][0]({}, g) is not None) >= len(P["regs"]) * 0.8
             and len({FEATURES[f][0]({}, g) for g in P["regs"].values()}) > 2]
-    if cfg.get("wild") and P["wild"]:
+    if cfg.get("wild") and sum(1 for u in past if u["wild14"]) >= MIN_UNITS:
         base.append("wild_nearby")
-    base.append("neighbor_outbreak")
+    if sum(1 for u in past if u["neigh"]) >= MIN_UNITS:
+        base.append("neighbor_outbreak")
+    if not base:
+        return {"available": False, "reason": "few_factors"}
     cand = [base]
     if P.get("temp_cov") and P["temp_cov"]["cases"] >= MIN_POS:
         cand.append(base + ["temperature"])
@@ -605,7 +658,9 @@ def model(species: str, P: dict) -> dict:
             continue
         cont = [FEATURES[f][1] for f in feats]
         mu = [sum(r[j] for r in rows) / len(rows) for j in range(len(feats))]
-        sd = [math.sqrt(sum((r[j] - mu[j]) ** 2 for r in rows) / len(rows)) or 1.0 for j in range(len(feats))]
+        sd = [math.sqrt(sum((r[j] - mu[j]) ** 2 for r in rows) / len(rows)) for j in range(len(feats))]
+        if any(c and v < 1e-6 for c, v in zip(cont, sd)):        # 값이 거의 같은 연속 요인은 뺀다
+            continue
         z = lambda r: [1.0] + [(r[j] - mu[j]) / sd[j] if cont[j] else r[j] for j in range(len(feats))]  # noqa: E731
         X = [z(r) for r in rows]
         f = logit_fit(X, ys)
@@ -665,12 +720,18 @@ def model(species: str, P: dict) -> dict:
 
 
 # ── 실행·캐시 ───────────────────────────────────────────────────────────
+def _weather_running() -> bool:
+    from . import weather
+    return bool(weather.state.get("running"))
+
+
 def _stamp() -> tuple:
     with db.session() as con:
         # 차량 방문은 과거 자료를 받는 동안 몇 분마다 하루씩 늘어나므로 30일 단위로만 다시 계산한다
         return (con.scalar("SELECT COUNT(*) FROM event"),
                 (con.scalar("SELECT COUNT(*) FROM vehicle_visit_day") or 0) // 30,
-                (con.scalar("SELECT COUNT(*) FROM context_ts WHERE source = 'kma_asos_daily'") or 0) // 5000,
+                (con.scalar("SELECT COUNT(*) FROM context_ts WHERE source = 'kma_asos_daily' AND metric = 'temp_avg'") or 0) // 20000,
+                _weather_running(),
                 str(con.scalar("SELECT MAX(collected_at) FROM region_stat"))[:10], con.scalar("SELECT COUNT(*) FROM bird_track"),
                 date.today().isoformat())
 

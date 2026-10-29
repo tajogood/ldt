@@ -609,3 +609,64 @@ def test_assoc_recovers_planted_effects():
     assert d["status"] in ("computing", "ready", "updating")
     assert assoc.get("poultry", "IB", wait=60)["status"] == "ready"
     assert c.get("/api/assoc?species=all").json()["status"] == "na"
+
+
+def _hwpx(path, rows, spans=()):
+    """테스트용 최소 hwpx: 표 하나(병합 셀 포함)."""
+    import zipfile
+    ns = 'xmlns:hp="http://www.hancom.co.kr/hwpml/2011/paragraph"'
+    tcs = []
+    for r, row in enumerate(rows):
+        for c, txt in enumerate(row):
+            if txt is None:
+                continue
+            rs = dict(spans).get((r, c), 1)
+            tcs.append(f'<hp:tc><hp:subList><hp:p><hp:run><hp:t>{txt}</hp:t></hp:run></hp:p></hp:subList>'
+                       f'<hp:cellAddr colAddr="{c}" rowAddr="{r}"/><hp:cellSpan colSpan="1" rowSpan="{rs}"/></hp:tc>')
+    xml = f'<hs:sec xmlns:hs="http://www.hancom.co.kr/hwpml/2011/section" {ns}><hp:p><hp:run><hp:tbl><hp:tr>{"".join(tcs)}</hp:tr></hp:tbl></hp:run></hp:p></hs:sec>'
+    with zipfile.ZipFile(path, "w") as z:
+        z.writestr("mimetype", "application/hwp+zip")
+        z.writestr("Contents/section0.xml", xml)
+
+
+def test_wild_file_import(tmp_path):
+    from app import wild
+    f = tmp_path / "'22~'23년 동절기 야생조류 고병원성 AI 발생현황.hwpx"
+    _hwpx(f, [["연번", "시료채취일", "확진일", "시도", "시군", "지점", "종", "혈청형"],
+              ["1", "10.10", "10.17", "충남", "천안시", "봉강천", "청둥오리", "H5N1"],
+              ["2", "11.28", "12.2", "전남", None, "영암호", "큰고니", "H5N1"],     # 시군 병합(위 칸과 같음)은 아래에서 따로
+              ["3", "1.5", "1.9", "경기", "화성시", "남양 우정면", "흰뺨검둥오리", "H5N1"],
+              ["4", "2.1", "2.3", "경기", "화성시", "매향리", "저병원성", "H5N3 저병원성"]],
+          spans=[((1, 4), 2)])
+    rows = wild.rows_from_tables(wild.file_tables(f), wild.season_year(f.name))
+    assert [(r["date"].isoformat(), r["sigungu"], r["place"]) for r in rows] == [
+        ("2022-10-17", "천안시", "봉강천"), ("2022-12-02", "천안시", "영암호"), ("2023-01-09", "화성시", "남양 우정면")]
+    assert rows[0]["sampled"].isoformat() == "2022-10-10"
+    assert wild.parse_date("'22.11.10.(목)", None).isoformat() == "2022-11-10"
+    assert wild.season_year("2021~2022 야생") is None or wild.season_year("2021~2022 야생") == 2021
+    r = wild.load([f])                                  # 브이월드 키가 없으면 좌표 없이 들어감
+    assert r["rows"] == 3 and r["files"][0]["rows"] == 3
+    with db.session() as con:
+        assert con.scalar("SELECT COUNT(*) FROM event WHERE source = 'wild_files'") == 3
+
+
+def test_weather_backfill_plans_only_outbreak_months(monkeypatch):
+    from app import collect, weather
+    rs = weather.needed_ranges()
+    assert rs and all((b - a).days <= 900 for a, b in rs)
+    calls = []
+
+    def fake(src, base, limit=None):
+        p = src["params"]
+        calls.append(p["stnIds"])
+        a = date(int(p["startDt"][:4]), int(p["startDt"][4:6]), int(p["startDt"][6:]))
+        b = date(int(p["endDt"][:4]), int(p["endDt"][4:6]), int(p["endDt"][6:]))
+        d = a
+        while d <= b:
+            yield {"tm": d.isoformat(), "stnId": p["stnIds"], "avgTa": "1.5"}
+            d += timedelta(days=1)
+    monkeypatch.setattr(collect, "fetch_paged", fake)
+    n = len(weather.plan())
+    assert n > 0
+    weather.run(pause=0)
+    assert len(calls) == n and weather.plan() == []      # 받은 구간은 다시 받지 않음

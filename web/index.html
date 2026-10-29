@@ -114,14 +114,14 @@
     <div class="as-intro muted small" id="as-status"></div>
     <!-- 6. 종합 위험 모형 -->
     <div class="card">
-      <div class="card-h"><h2 data-i18n="as.model">종합 위험 모형 — 요인을 함께 넣은 로지스틱 회귀</h2><span class="muted small" id="as-model-sum"></span></div>
+      <div class="card-h"><h2 data-i18n="as.model">종합 위험 모형 — 여러 요인을 함께 고려한 발생 위험</h2><span class="muted small" id="as-model-sum"></span></div>
       <div class="as-model">
         <div><div class="pad-s muted small" id="as-pred-h"></div><div class="map" id="map-assoc"></div><div class="legend-row" id="as-pred-legend"></div></div>
         <div>
-          <div class="pad-s"><b data-i18n="as.or">요인별 오즈비 (95% 신뢰구간)</b> <span class="muted small" data-i18n="as.orhint">1보다 크면 발생 위험 증가, 막대가 1을 넘지 않으면 통계적으로 뚜렷함</span></div>
+          <div class="pad-s"><b data-i18n="as.or">요인별 위험 배수</b> <span class="muted small" data-i18n="as.orhint">다른 조건이 같을 때 그 요인이 있으면 발생 위험이 몇 배가 되는지</span></div>
           <div id="as-forest" class="pad-s"></div>
           <div class="scroll"><table class="tbl small" id="as-models"></table></div>
-          <div class="pad-s"><b data-i18n="as.top">이번 주 예측 상위 시군</b></div>
+          <div class="pad-s"><b data-i18n="as.top">이번 주 발생 확률이 높은 시군</b></div>
           <div class="scroll"><table class="tbl" id="as-pred"></table></div>
         </div>
       </div>

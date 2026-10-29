@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Str
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import analysis, assoc, birds, collect, db, explore, freshness, history, news, scheduler
+from . import analysis, assoc, birds, collect, db, explore, freshness, history, news, scheduler, weather, wild
 from .settings import VWORLD_KEY, WEB_DIR
 from .species import SPECIES, disease_code
 
@@ -24,9 +24,21 @@ db.init()
 
 
 @app.on_event("startup")
+def _load_wild():
+    try:
+        r = wild.load()
+        if r["files"]:
+            print("야생 검출 파일:", r)
+    except Exception as e:  # 파일이 이상해도 서버는 뜬다
+        print("야생 검출 파일 읽기 실패:", e)
+
+
 def _start_auto_collect():
     scheduler.start()
     news.start()      # 뉴스 5분 · 공지 30분마다(NEWS_MONITOR=0 이면 꺼짐)
+    weather.start()   # 과거 발생 시기 기온만 골라 받기(연관 분석용, WEATHER_BACKFILL=0 이면 꺼짐)
+    import threading
+    threading.Thread(target=_load_wild, name="wild-files", daemon=True).start()   # data/files 의 야생 검출 목록
     try:              # 철새 이동 정보 파일이 있고 아직 안 넣었으면 넣기
         with db.session() as con:
             empty = not con.scalar("SELECT COUNT(*) FROM bird_track")
@@ -187,6 +199,17 @@ def _hsp(species: str) -> str:
     if species not in SPECIES:
         raise HTTPException(400, "species: poultry | pig | cattle")
     return species
+
+
+@app.post("/api/wild/load")
+def wild_load():
+    """data/files 의 야생 검출 목록 파일(이름에 '야생')을 다시 읽는다."""
+    return wild.load()
+
+
+@app.get("/api/weather/backfill")
+def weather_backfill():
+    return weather.status()
 
 
 @app.get("/api/assoc")
