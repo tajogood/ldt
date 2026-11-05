@@ -257,3 +257,11 @@ table.tbl.small{font-size:12px}
 .mbody .scroll.tall{max-height:420px}
 .mbody tr.click{cursor:pointer}.mbody tr.click:hover td{background:var(--soft)}
 .forest .frow{cursor:pointer}.forest .frow .hit{fill:transparent}.forest .frow:hover .hit{fill:var(--soft)}
+
+/* 페이지 맨 아래 안내 */
+.site-foot{border-top:1px solid var(--line);margin-top:28px;padding:22px 24px 30px;background:var(--card);color:var(--muted);font-size:12px;line-height:1.75}
+.site-foot .ft-in{max-width:2560px;margin:0 auto}
+.site-foot p{margin:0 0 4px}
+.site-foot .ft-op{color:var(--ink)} .site-foot .sep{margin:0 8px;color:var(--line)}
+.site-foot a{color:inherit}
+.site-foot .ft-copy{margin-top:8px}

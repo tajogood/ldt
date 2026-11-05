@@ -36,5 +36,9 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "").strip() or f"sqlite:///{_sqlit
 # 원본 JSON 파일도 남길지 (DB raw_record 에는 항상 저장)
 KEEP_RAW_FILES = os.environ.get("KEEP_RAW_FILES", "0") == "1"
 
+# 페이지 맨 아래 안내(푸터)에 넣을 운영자 정보 — 비워 두면 그 줄은 표시하지 않음
+SITE_INFO = {k: os.environ.get(f"SITE_{k.upper()}", "").strip() for k in
+             ("operator", "ceo", "biz_no", "address", "email", "phone", "copyright")}
+
 for d in (_sqlite.parent, RAW_DIR, FILES_DIR):
     d.mkdir(parents=True, exist_ok=True)

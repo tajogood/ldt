@@ -23,6 +23,7 @@ const fmtTime = (iso) => iso ? new Date(iso).toLocaleString(S.lang === "en" ? "e
 const fmtNum = (n) => Number(n).toLocaleString(S.lang === "en" ? "en-US" : "ko-KR");
 
 function applyLang() {
+  if (typeof renderFooter === "function" && document.getElementById("site-foot")) setTimeout(renderFooter);
   document.documentElement.lang = S.lang;
   document.title = t("app.title");
   document.querySelectorAll("[data-i18n]").forEach((el) => {
@@ -1547,3 +1548,18 @@ async function refresh() {
 applyLang();
 refresh();
 pollNews();
+
+
+/* ── 페이지 맨 아래 안내(푸터) — 운영자 정보는 .env 의 SITE_* 값, 출처·면책은 고정 ───────── */
+function renderFooter() {
+  const I = CFG.site || {};
+  const op = [I.operator && `<b>${esc(I.operator)}</b>`, I.ceo && `${t("ft.ceo")} ${esc(I.ceo)}`,
+    I.biz_no && `${t("ft.biz")} ${esc(I.biz_no)}`, I.address && esc(I.address),
+    I.email && `<a href="mailto:${esc(I.email)}">${esc(I.email)}</a>`, I.phone && `${t("ft.tel")} ${esc(I.phone)}`].filter(Boolean);
+  const year = new Date().getFullYear();
+  $("#site-foot").innerHTML = `<div class="ft-in">
+    ${op.length ? `<p class="ft-op">${op.join('<span class="sep">|</span>')}</p>` : ""}
+    <p>${t("ft.src")}</p>
+    <p>${t("ft.disc")}</p>
+    <p class="ft-copy">© ${year} ${esc(I.copyright || I.operator || t("app.title"))}. All rights reserved.</p></div>`;
+}

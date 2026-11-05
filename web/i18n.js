@@ -370,3 +370,9 @@ Object.assign(I18N.en, {
   "as.rg.duck": "Duck farms", "as.rg.farms": "Farms ({n}, MOIS licences, active)", "as.rg.back": "Back to band",
   "as.rg.nofarms": "No farms in the MOIS licence data for this county; see township counts above.",
   "as.rg.sub": "{f} farms · {c} outbreak weeks"});
+Object.assign(I18N.ko, {"ft.ceo": "대표", "ft.biz": "사업자등록번호", "ft.tel": "전화",
+  "ft.src": "데이터 출처: 농림축산식품부(농식품 빅데이터 포털) · 공공데이터포털(행정안전부, 농림축산검역본부, 기상청) · 축산차량 방문 공개 정보 · 국립야생동물질병관리원 · 국토교통부 브이월드 · 뉴스는 각 언론사",
+  "ft.disc": "이 서비스는 공개 자료를 모아 만든 참고용 분석입니다. 공식 방역 조치·판단을 대신하지 않으며, 원천 자료의 지연·오류가 있을 수 있습니다. 공식 정보는 농림축산식품부와 각 지자체 발표를 확인하세요."});
+Object.assign(I18N.en, {"ft.ceo": "CEO", "ft.biz": "Business reg. no.", "ft.tel": "Tel",
+  "ft.src": "Data: Ministry of Agriculture, Food and Rural Affairs (MAFRA big-data portal) · data.go.kr (Ministry of the Interior and Safety, Animal and Plant Quarantine Agency, KMA) · public livestock-vehicle visit records · National Institute of Wildlife Disease Control · VWorld (MOLIT) · news from each outlet",
+  "ft.disc": "Reference analysis built from public data. It does not replace official disease-control decisions, and source data may be delayed or contain errors. Check MAFRA and local government announcements for official information."});

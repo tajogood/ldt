@@ -72,7 +72,8 @@ def _bbox(s: str | None):
 
 @app.get("/config.js", response_class=PlainTextResponse)
 def config_js():
-    cfg = {"vworldKey": VWORLD_KEY, "dialect": db.engine.dialect.name,
+    from .settings import SITE_INFO
+    cfg = {"vworldKey": VWORLD_KEY, "dialect": db.engine.dialect.name, "site": SITE_INFO,
            "species": {k: {"label": v["label"], "label_en": v["label_en"], "diseases": v["diseases"],
                            "diseases_en": v["diseases_en"], "radii_km": v["radii_km"],
                            "main_disease": v["main_disease"], "season_start_month": v["season_start_month"],
