@@ -728,5 +728,12 @@ def test_daily_page_publish(tmp_path, monkeypatch):
     assert r["pushed"]
     html_ = (pages / "index.html").read_text(encoding="utf-8")
     assert "오늘의 가축질병 현황" in html_ and "const D = {" in html_ and "FARM_NM" not in html_
-    files = subprocess.run(["git", "-C", str(remote), "ls-tree", "-r", "--name-only", "HEAD"], capture_output=True, text=True).stdout
+    branch = subprocess.run(["git", "-C", str(pages), "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True).stdout.strip()
+    files = subprocess.run(["git", "-C", str(remote), "ls-tree", "-r", "--name-only", branch], capture_output=True, text=True).stdout
     assert "index.html" in files and f"archive/{r['date']}.html" in files
+    # 커밋만 되고 못 올라간 상태(ahead)도 다음 번에 올린다
+    (pages / "x.txt").write_text("x")
+    subprocess.run(["git", "-C", str(pages), "add", "-A"], check=True)
+    subprocess.run(["git", "-C", str(pages), "commit", "-q", "-m", "x"], check=True)
+    monkeypatch.setattr(daily, "generate", lambda today=None: pages / "index.html")
+    assert daily.publish()["pushed"]

@@ -300,11 +300,21 @@ def publish(today: date | None = None) -> dict:
             (pd / "archive" / "index.html").write_text(_archive_index(pd / "archive"), encoding="utf-8")
             (pd / ".nojekyll").write_text("", encoding="utf-8")
             _git("add", "-A")
+            committed = False
             if _git("status", "--porcelain"):
                 _git("commit", "-q", "-m", f"오늘의 가축질병 현황 {today.isoformat()}")
-                _git("push", "-q")
+                committed = True
+            # 원격 브랜치와 연결이 없으면(빈 저장소를 받은 경우) 연결하며 올리고, 못 올린 커밋이 남아 있어도 올린다
+            try:
+                _git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}")
+                ahead = int(_git("rev-list", "--count", "@{u}..HEAD") or 0)
+                if committed or ahead:
+                    _git("push", "-q")
+                    res["pushed"] = True
+            except RuntimeError:
+                _git("push", "-q", "-u", "origin", "HEAD")
                 res["pushed"] = True
-            else:
+            if not res["pushed"]:
                 res["reason"] = "올린 내용과 바뀐 것이 없습니다"
         state["last"] = {**res, "at": datetime.now().strftime("%Y-%m-%d %H:%M")}
         state["error"] = None
