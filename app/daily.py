@@ -1,7 +1,7 @@
 """오늘의 가축질병 현황 — 매일 아침 한 장짜리 요약 대시보드(HTML 한 파일)를 만들어 GitHub Pages 로 올린다.
 
 - build()   : 오늘 자료 묶음(가금 중심 + 돼지·소 요약). 공개 페이지라 시군 단위까지만(농장 이름·리 주소 없음)
-- render()  : 외부 의존은 CDN 의 Leaflet·Chart.js 뿐인 HTML 한 파일. 지도 배경은 키가 필요 없는 CARTO(OSM)
+- render()  : 외부 의존은 CDN 의 Leaflet·Chart.js 뿐인 HTML 한 파일. 지도 배경은 키가 필요 없는 OpenStreetMap
 - publish() : DAILY_PAGES_DIR(공개 저장소를 받아 둔 폴더)에 index.html 과 archive/날짜.html 을 쓰고 git push
               (git 인증은 그 맥의 설정을 그대로 씀: gh auth login 또는 자격 증명 도우미)
 - 매일 DAILY_AT(기본 08:00) 이후 첫 확인 때 한 번. DAILY_PUBLISH=0 이면 끔. 서버의 /daily 에서 미리보기.
@@ -189,7 +189,7 @@ th{{color:var(--muted);font-weight:500;font-size:12px}} .tag{{display:inline-blo
   <div class="card c6"><h2>최근 뉴스·공지</h2><div id="news"></div></div>
 </div>
 <footer>{foot}<br>데이터 출처: 농림축산식품부(농식품 빅데이터 포털) · 공공데이터포털(행정안전부, 농림축산검역본부, 기상청) · 축산차량 방문 공개 정보 · 국립야생동물질병관리원 · 뉴스는 각 언론사.
-공개 자료로 만든 참고용 요약이며 공식 방역 판단을 대신하지 않습니다. 공식 정보는 농림축산식품부와 각 지자체 발표를 확인하세요. 지도 © OpenStreetMap · CARTO.
+공개 자료로 만든 참고용 요약이며 공식 방역 판단을 대신하지 않습니다. 공식 정보는 농림축산식품부와 각 지자체 발표를 확인하세요. 지도 © OpenStreetMap.
 <br><a href="archive/">지난 현황 보기</a></footer>
 </div>
 <script>
@@ -213,8 +213,8 @@ if (P.by_now.avg != null) $("#bynow").textContent = `시즌 ${{P.by_now.week}}�
 $("#recent").innerHTML = P.recent.length ? `<table><tr><th>날짜</th><th>구분</th><th>지역</th></tr>${{P.recent.map((e) =>
   `<tr><td>${{e.date.slice(5)}}</td><td><span class="tag t-${{e.kind}}">${{KIND[e.kind] || e.kind}}</span> ${{esc(e.sub)}}</td><td>${{esc(e.region)}}</td></tr>`).join("")}}</table>` : `<p class="muted">최근 7일 동안 발생·검출이 없습니다.</p>`;
 // 지도
-const map = L.map("map", {{ scrollWheelZoom: false }}).setView([35.9, 127.8], 7);
-L.tileLayer("https://{{s}}.basemaps.cartocdn.com/light_all/{{z}}/{{x}}/{{y}}{{r}}.png", {{ maxZoom: 18, attribution: "&copy; OpenStreetMap &copy; CARTO" }}).addTo(map);
+const map = L.map("map", {{ scrollWheelZoom: false }}).fitBounds([[33.1, 125.0], [38.6, 129.6]]);
+L.tileLayer("https://tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png", {{ maxZoom: 18, attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>' }}).addTo(map);
 P.zones.forEach((z) => {{ L.circle([z.lat, z.lon], {{ radius: 10000, color: "#B42318", weight: 1, dashArray: "4 4", fill: false }}).addTo(map);
   L.circle([z.lat, z.lon], {{ radius: 3000, color: "#B42318", weight: 1, fillOpacity: 0.08 }}).addTo(map); }});
 if (P.model) P.model.pred.slice(0, 10).forEach((r) => L.circleMarker([r.lat, r.lon], {{ radius: 9, color: "#EDA100", weight: 3, fill: false }})
