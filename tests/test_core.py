@@ -695,3 +695,19 @@ def test_startup_runs(monkeypatch):
     monkeypatch.setattr(weather, "start", lambda: None)
     with TestClient(main.app) as c:
         assert c.get("/api/weather/backfill").status_code == 200
+
+
+def test_report_build_and_auto_archive():
+    """시즌 보고서 자료 묶음과 자동 보관(끝난 시즌 최종본 · 이번 주 주간본, 두 번째 확인에서는 새로 안 만듦)."""
+    from datetime import datetime
+    from app import report
+    ss = report.seasons("poultry")
+    assert ss and ss[-1]["year"] == report.FIRST_YEAR
+    d = report.build("poultry", "IB", ss[-1]["year"], assoc_wait=60)
+    assert {"kpi", "events", "weekly", "seasons", "regions", "assoc", "freshness"} <= set(d)
+    now = datetime(2026, 11, 16, 6, 0).astimezone()          # 월요일 06:00
+    made = report.tick(now)
+    assert any(m["kind"] == "weekly" for m in made)
+    assert report.tick(now) == []
+    lst = report.listing("poultry")
+    assert lst and report.get(lst[0]["id"])["snapshot"]["kind"] in ("weekly", "final")

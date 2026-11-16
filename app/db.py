@@ -182,6 +182,16 @@ news_item = Table(
     Index("ix_news_time", "published"), Index("ix_news_kind", "kind", "relevant"),
 )
 
+# 보고서 보관본(주간·시즌 최종·직접 보관): 만든 날의 보고서 자료(JSON)를 그대로 둔다
+report_snapshot = Table(
+    "report_snapshot", md, _pk(),
+    Column("uid", String(80), nullable=False, unique=True),
+    Column("species", String(16), nullable=False), Column("disease", String(80)),
+    Column("season", Integer, nullable=False), Column("kind", String(12), nullable=False),
+    Column("created_at", TS, nullable=False), Column("data", Text, nullable=False),
+    Index("ix_report_season", "species", "season", "kind"),
+)
+
 collect_log = Table(
     "collect_log", md, _pk(),
     Column("source", String(64), nullable=False),
@@ -189,13 +199,13 @@ collect_log = Table(
     Column("ok", Boolean, nullable=False), Column("rows", Integer), Column("message", Text),
 )
 
-TABLES = {t.name: t for t in (raw_record, event, facility, contact, context_ts, region_stat, geo_cache, region_shape, visit_place, visit_kind, vehicle_visit, vehicle_visit_day, news_item, bird_track, collect_log)}
+TABLES = {t.name: t for t in (raw_record, event, facility, contact, context_ts, region_stat, geo_cache, region_shape, visit_place, visit_kind, vehicle_visit, vehicle_visit_day, news_item, bird_track, report_snapshot, collect_log)}
 CONFLICT = {"event": ["uid"], "facility": ["uid"], "contact": ["uid"],
             "context_ts": ["place", "date", "metric", "source"],
             "region_stat": ["sido", "sigungu", "emd", "species", "metric", "as_of", "source"],
             "geo_cache": ["address"], "region_shape": ["code"],
             "vehicle_visit": ["date", "place_id", "kind_id"], "vehicle_visit_day": ["date"],
-            "visit_place": ["address"], "news_item": ["uid"], "bird_track": ["uid"], "visit_kind": ["facility", "species_raw", "vehicle"]}
+            "visit_place": ["address"], "news_item": ["uid"], "report_snapshot": ["uid"], "bird_track": ["uid"], "visit_kind": ["facility", "species_raw", "vehicle"]}
 
 
 def now() -> datetime:

@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Str
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import analysis, assoc, birds, collect, db, explore, freshness, history, news, scheduler, wild
+from . import analysis, assoc, birds, collect, db, explore, freshness, history, news, report, scheduler, wild
 from . import weather as weather_bf      # 과거 기온 백필(아래 /api/weather 함수 이름과 겹치지 않게)
 from .settings import VWORLD_KEY, WEB_DIR
 from .species import SPECIES, disease_code
@@ -43,6 +43,7 @@ def _start_auto_collect():
     print("앱 준비 완료", flush=True)
     scheduler.start()
     news.start()      # 뉴스 5분 · 공지 30분마다(NEWS_MONITOR=0 이면 꺼짐)
+    report.start()       # 보고서 자동 보관(매주 월 05:00 · 시즌 끝)
     weather_bf.start()   # 과거 발생 시기 기온만 골라 받기(연관 분석용, WEATHER_BACKFILL=0 이면 꺼짐)
     import threading
     threading.Thread(target=_load_wild, name="wild-files", daemon=True).start()   # data/files 의 야생 검출 목록
@@ -251,6 +252,37 @@ def weather_backfill():
 @app.post("/api/weather/backfill")
 def weather_backfill_now():
     return weather_bf.start_now()
+
+
+@app.get("/api/report/seasons")
+def report_seasons(species: str = "poultry"):
+    if species not in SPECIES:
+        raise HTTPException(400, "species")
+    return {"seasons": report.seasons(species), "saved": report.listing(species)}
+
+
+@app.get("/api/report")
+def report_live(species: str = "poultry", disease: str | None = None, season: int | None = None):
+    """지금 상태의 시즌 보고서 자료(연관 분석이 계산 중이면 assoc.status = computing)."""
+    if species not in SPECIES:
+        raise HTTPException(400, "species")
+    return report.build(species, disease, season, assoc_wait=2)
+
+
+@app.get("/api/reports/{rid}")
+def report_saved(rid: int):
+    d = report.get(rid)
+    if not d:
+        raise HTTPException(404, "report")
+    return d
+
+
+@app.post("/api/reports")
+def report_save_now(species: str = "poultry", season: int | None = None, disease: str | None = None):
+    """지금 상태를 보관본으로 저장(직접 보관)."""
+    if species not in SPECIES:
+        raise HTTPException(400, "species")
+    return report.save(species, "manual", season, disease)
 
 
 @app.get("/api/assoc/region")

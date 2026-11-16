@@ -21,9 +21,34 @@ function rpToolbar() {
 }
 $("#rp-build").onclick = () => buildReport();
 $("#rp-pdf").onclick = () => rpPrint();
+$("#rp-season").onchange = () => { $("#rp-saved").value = ""; buildReport(); };
+$("#rp-saved").onchange = () => buildReport();
+$("#rp-save").onclick = async () => {
+  const b = $("#rp-save"); b.disabled = true; rpStatus(t("rp.saving"));
+  const sp = S.species === "all" ? "poultry" : S.species;
+  try { await api(`/api/reports?species=${sp}&season=${$("#rp-season").value}`, { method: "POST" }); await rpLists(); rpStatus(t("rp.saved.ok"), false); }
+  catch (e) { rpStatus(t("as.error", { e: e.message }), false); }
+  b.disabled = false;
+};
+
+// 시즌(2025년부터)과 보관본 목록
+async function rpLists() {
+  const sp = S.species === "all" ? "poultry" : S.species;
+  const d = await api(`/api/report/seasons?species=${sp}`);
+  const keep = $("#rp-season").dataset.sp === sp ? $("#rp-season").value : "";
+  $("#rp-season").innerHTML = d.seasons.map((x) => `<option value="${x.year}">${esc(x.label)}${x.in_progress ? ` (${t("h.now")})` : ""}</option>`).join("");
+  if (keep && d.seasons.some((x) => String(x.year) === keep)) $("#rp-season").value = keep;
+  $("#rp-season").dataset.sp = sp;
+  const kindL = (k) => t("rp.kind." + k);
+  const keepS = $("#rp-saved").value;
+  $("#rp-saved").innerHTML = `<option value="">${t("rp.live")}</option>` +
+    d.saved.map((r) => `<option value="${r.id}">${esc(r.label)} · ${kindL(r.kind)} · ${esc(r.created_at)}</option>`).join("");
+  if (keepS && d.saved.some((r) => String(r.id) === keepS)) $("#rp-saved").value = keepS;
+}
 
 async function viewReport() {
   rpToolbar();
+  await rpLists();
   await buildReport();
 }
 
@@ -32,16 +57,18 @@ function rpStatus(txt, busy = true) {
   $("#rp-pdf").disabled = busy;
 }
 
-// 연관 분석은 처음엔 계산 중일 수 있어 최대 3분 기다린다
-async function rpAssoc(sp, dis, token) {
+// 보고서 자료: 보관본이면 그대로, 아니면 지금 상태(연관 분석이 계산 중이면 최대 3분 기다림)
+async function rpData(sp, season, saved, token) {
+  if (saved) return api(`/api/reports/${saved}`);
   for (let i = 0; i < 60; i++) {
-    const d = await api(`/api/assoc?species=${sp}&disease=${dis}`).catch(() => ({ status: "error" }));
+    const d = await api(`/api/report?species=${sp}&season=${season}`);
     if (token !== RP.token) return null;
-    if (d.status === "ready" || d.status === "updating" || d.status === "na" || d.error || d.empty) return d;
+    const st = d.assoc?.status;
+    if (st !== "computing") return d;
     rpStatus(t("rp.wait.assoc"));
     await rpSleep(3000);
   }
-  return { status: "timeout" };
+  return api(`/api/report?species=${sp}&season=${season}`);
 }
 
 const rpPage = (key, title, body, sub = "") =>
@@ -53,26 +80,21 @@ async function buildReport() {
   RP.ready = false;
   if (S.species === "all") { S.species = "poultry"; renderSpeciesTabs(); }
   const sp = S.species, cfg = CFG.species[sp];
-  const dis = S.tlDisease && S.tlDisease in cfg.diseases ? S.tlDisease : cfg.main_disease;
+  if ($("#rp-season").dataset.sp !== sp) await rpLists();
+  const saved = $("#rp-saved").value;
+  rpStatus(t("rp.wait.data"));
+  const safe = (p) => p.catch(() => null);
+  const R = await safe(rpData(sp, $("#rp-season").value, saved, token));
+  if (token !== RP.token) return;
+  if (!R) { rpStatus(t("rp.fail"), false); return; }
+  const dis = R.disease;
   const disName = (S.lang === "en" ? cfg.diseases_en : cfg.diseases)[dis] || dis;
   const spName = S.lang === "en" ? cfg.label_en : cfg.label;
-  RP.meta = `${spName} · ${disName} · ${rpDate()}`;
-  RP.file = `${t("rp.file")}_${spName.replace(/[\s()·/]+/g, "")}_${dis}_${rpIso()}`;
-  rpStatus(t("rp.wait.data"));
-  const q = `species=${sp}&disease=${dis}`;
-  const cur = seasonRange(sp), prev = seasonRange(sp, 1);
+  const asOf = R.snapshot ? R.snapshot.created_at.slice(0, 10) : rpIso();
+  RP.meta = `${spName} · ${disName} · ${R.label} · ${asOf}`;
+  RP.file = `${t("rp.file")}_${spName.replace(/[\s()·/]+/g, "")}_${dis}_${R.label.replace("/", "-")}_${asOf}`;
   const on = (k) => RP.on.has(k);
-  const safe = (p) => p.catch(() => null);
-  const [sum, series, evCur, evPrev, se, rg, news, fr] = await Promise.all([
-    safe(api(`/api/summary?species=${sp}`)), on("weekly") ? safe(api(`/api/series?species=${sp}`)) : null,
-    on("map") ? safe(api(`/api/events?species=${sp}&from=${cur.from}`)) : null,
-    on("map") ? safe(api(`/api/events?species=${sp}&from=${prev.from}&to=${prev.to}`)) : null,
-    (on("seasons") || on("summary")) ? safe(api(`/api/history/seasons?${q}`)) : null,
-    on("regions") ? safe(api(`/api/history/regions?${q}`)) : null,
-    on("news") ? safe(api(`/api/news?species=${sp}&limit=12`)) : null,
-    safe(api("/api/freshness"))]);
-  if (token !== RP.token) return;
-  const A = (on("model") || on("factors") || on("summary")) ? await rpAssoc(sp, dis, token) : null;
+  const shapes = on("map") || on("model") ? await safe(api(`/api/farms/shapes?species=${sp}`)) : null;
   if (token !== RP.token) return;
   rpStatus(t("rp.wait.draw"));
 
@@ -81,30 +103,33 @@ async function buildReport() {
   RP.maps = [];
   Object.keys(S.charts).filter((k) => k.startsWith("rp-")).forEach(clearChart);
 
+  const A = R.assoc;
+  const okA = A && !A.error && !A.empty && A.status !== "na" && A.status !== "computing";
+  const se = R.seasons, rg = R.regions, k = R.kpi;
+  const evCur = { items: R.events }, evPrev = { items: R.prev_events };
+  const series = { items: R.weekly };
+  const cur = { label: R.label }, prev = { label: R.prev_label };
   const pages = [];
-  const k = sum?.kpi || {};
-  const okA = A && A.status !== "timeout" && !A.error && !A.empty && A.status !== "na";
-
   // 1. 표지·요약
   if (on("summary")) {
     const kpi = (lab, v, sub, c) => `<div class="rp-kpi"><span>${lab}</span><b style="color:${c}">${v ?? "–"}</b><small>${sub || ""}</small></div>`;
-    const prevTxt = (n) => k.prev ? t("kpi.prev", { n }) : "";
-    const finds = rpFindings(k, se, okA ? A : null);
+    const prevS = (n) => t("rp.prevsame", { s: R.prev_label, n });
+    const finds = rpFindings(R, okA ? A : null);
     pages.push(`<section class="rp-page rp-cover" data-k="summary">
-      <div class="rp-hd"><span>${esc(CFG.site?.operator || "")}</span><span>${rpDate()}</span></div>
+      <div class="rp-hd"><span>${esc(CFG.site?.operator || "")}</span><span>${esc(asOf)}</span></div>
       <h1>${esc(t("rp.title"))}</h1>
-      <p class="rp-meta">${esc(spName)} · ${esc(disName)}<br>${t("rp.made", { d: rpDate() })}</p>
+      <p class="rp-meta">${esc(spName)} · ${esc(disName)}<br><b>${esc(t("rp.seasonof", { s: R.label }))}</b> (${R.from} ~ ${R.in_progress ? t("rp.upto", { d: R.upto }) : R.to})<br>
+        ${R.snapshot ? t("rp.made.snap", { d: R.snapshot.created_at, k: t("rp.kind." + R.snapshot.kind) }) : t("rp.made", { d: rpDate() })}</p>
       <div class="rp-kpis">
-        ${kpi(t("kpi.outbreaks"), k.outbreaks, `${t("kpi.since", { d: k.season_start || "" })} ${prevTxt(k.prev?.outbreaks)}`, "#B42318")}
-        ${kpi(t("kpi.wild"), k.wild_detections, `${t("kpi.since", { d: k.season_start || "" })} ${prevTxt(k.prev?.wild_detections)}`, "#1D4ED8")}
-        ${kpi(t("kpi.restrict"), k.restrictions_active, t("kpi.now"), "#B54708")}
-        ${kpi(t("kpi.farms"), k.farms != null ? fmtNum(k.farms) : "–", k.heads ? t("kpi.headsub", { n: fmtNum(k.heads) }) : "", "#17201B")}
+        ${kpi(t("kpi.outbreaks"), k.outbreaks, prevS(k.prev_same.outbreaks), "#B42318")}
+        ${kpi(t("kpi.wild"), k.wild_detections, prevS(k.prev_same.wild_detections), "#1D4ED8")}
+        ${kpi(t("rp.k.sgg"), k.sigungu, k.first ? `${k.first} ~ ${k.last}` : "", "#B54708")}
+        ${kpi(t("rp.k.heads"), k.heads ? fmtNum(k.heads) : "–", t("rp.k.restrict", { n: k.restrictions }), "#17201B")}
       </div>
       <h3>${t("rp.findings")}</h3>
       <ul class="rp-find">${finds.map((f) => `<li>${f}</li>`).join("") || `<li>${t("rp.nofind")}</li>`}</ul>
       <h3>${t("rp.toc")}</h3>
       <ol class="rp-toc">${RP_SECTIONS.filter((x) => x !== "summary" && on(x)).map((x) => `<li>${t("rp.s." + x)}</li>`).join("")}</ol>
-      ${sum?.alert ? `<p class="rp-alert">${esc(sum.alert.date)} · ${esc((sum.alert.note || "").split(".")[0])}</p>` : ""}
     </section>`);
   }
   // 2. 현황 지도
@@ -112,11 +137,11 @@ async function buildReport() {
     const nCur = (evCur?.items || []).filter((e) => e.kind === "outbreak").length, nW = (evCur?.items || []).filter((e) => e.kind === "wild_detection").length;
     pages.push(rpPage("map", t("rp.s.map"), `<div class="rp-map" id="rp-map-cur"></div>
       <p class="rp-legend"><i style="background:#B42318"></i>${t("rp.l.cur", { s: cur.label })} ${nCur} · <i style="background:#1D4ED8"></i>${t("kpi.wild")} ${nW} · <i style="background:#9AA19C"></i>${t("rp.l.prev", { s: prev.label })} ${(evPrev?.items || []).filter((e) => e.kind === "outbreak").length}</p>`,
-      t("rp.map.sub")));
+      t("rp.map.sub2", { s: R.label, p: R.prev_label })));
   }
   // 3. 주간 추이
-  if (on("weekly") && series) {
-    pages.push(rpPage("weekly", t("rp.s.weekly"), `<div class="rp-chart"><canvas id="rp-weekly"></canvas></div>`, t("rp.weekly.sub")));
+  if (on("weekly") && series.items.length) {
+    pages.push(rpPage("weekly", t("rp.s.weekly"), `<div class="rp-chart"><canvas id="rp-weekly"></canvas></div>`, t("rp.weekly.sub2", { s: R.label })));
   }
   // 4. 시즌 비교
   if (on("seasons") && se?.series?.length) {
@@ -157,14 +182,14 @@ async function buildReport() {
     if (sp === "poultry") pages.push(rpPage("factors", t("as.birds"), B.available ? `<div class="rp-chart"><canvas id="rp-birds"></canvas></div>${assocBirdsHTML(B)}` : `<p class="muted">${asReason(B)}</p>`));
   }
   // 8. 뉴스·공지
-  if (on("news") && news?.items?.length) {
+  if (on("news") && R.news?.length) {
     pages.push(rpPage("news", t("rp.s.news"), `<table class="tbl small rp-tbl"><thead><tr><th>${t("th.date")}</th><th>${t("rp.news.src")}</th><th>${t("rp.news.title")}</th></tr></thead><tbody>` +
-      news.items.slice(0, 12).map((n) => `<tr><td class="nowrap">${String(n.published || n.fetched_at || "").slice(0, 10)}</td><td>${esc(n.publisher || "")}</td><td>${esc(n.title)}</td></tr>`).join("") + `</tbody></table>`));
+      R.news.slice(0, 15).map((n) => `<tr><td class="nowrap">${String(n.published || n.fetched_at || "").slice(0, 10)}</td><td>${esc(n.publisher || "")}</td><td>${esc(n.title)}</td></tr>`).join("") + `</tbody></table>`));
   }
   // 9. 데이터 기준·출처
   if (on("sources")) {
-    const used = (fr || []).filter((f) => f.rows);
-    pages.push(rpPage("sources", t("rp.s.sources"), `<table class="tbl small rp-tbl"><thead><tr><th>${t("rp.src.name")}</th><th>${t("rp.src.range")}</th><th>${t("rp.src.got")}</th><th class="r">${t("rp.src.rows")}</th></tr></thead><tbody>` +
+    const used = (R.freshness || []).filter((f) => f.rows);
+    pages.push(rpPage("sources", t("rp.s.sources"), `<p class="rp-sub">${t("rp.gen", { d: R.generated_at.replace("T", " ").slice(0, 16) })}</p><table class="tbl small rp-tbl"><thead><tr><th>${t("rp.src.name")}</th><th>${t("rp.src.range")}</th><th>${t("rp.src.got")}</th><th class="r">${t("rp.src.rows")}</th></tr></thead><tbody>` +
       used.map((f) => `<tr><td>${esc((S.lang === "en" ? f.title_en : f.title) || f.source)}</td><td class="nowrap">${f.data_from ? `${f.data_from} ~ ${f.data_to || ""}` : "–"}</td><td class="nowrap">${f.collected_at ? fmtTime(f.collected_at) : "–"}</td><td class="r">${fmtNum(f.rows)}</td></tr>`).join("") +
       `</tbody></table><p class="small">${t("ft.src")}</p><p class="small">${t("ft.disc")}</p>
       <p class="small">© ${new Date().getFullYear()} ${esc(CFG.site?.copyright || CFG.site?.operator || t("app.title"))}${CFG.site?.email ? ` · ${esc(CFG.site.email)}` : ""}</p>`));
@@ -197,14 +222,22 @@ async function buildReport() {
   // 지도
   const KOREA = [[33.0, 124.8], [38.7, 130.2]];
   const mk = async (id) => { const el = document.getElementById(id); if (!el) return null;
-    const m = await makeMap(el, { zoom: 7, base: "gray" }); m._el = el; RP.maps.push(m); m.fitLatLngs?.(KOREA, 7); return m; };
+    const m = await makeMap(el, { zoom: 7, base: "gray" }); m._el = el; RP.maps.push(m);
+    if (m.focus) m.focus(35.85, 127.75, 7); else m.fitLatLngs?.(KOREA, 7);   // 남한 전체가 꽉 차게
+    return m; };
+  // 바탕: 농장이 있는 읍면동(농장 수에 따라 옅은 초록) — 지도 배경 그림이 안 나와도 전국 윤곽이 보이게
+  const base = (m) => { if (!m || !shapes?.features?.length) return;
+    const mx = Math.max(1, ...shapes.features.map((f) => f.properties.farms || 0));
+    m.polys("base", shapes, (p) => ({ fillColor: `rgba(14,90,85,${(0.08 + 0.42 * Math.sqrt((p.farms || 0) / mx)).toFixed(2)})`, fillOpacity: 1, color: "#fff", weight: 0.3 })); };
   const mc = await mk("rp-map-cur");
+  base(mc);
   if (mc) {
     mc.dots("prev", (evPrev?.items || []).filter((e) => e.kind === "outbreak" && e.lat != null).map((e) => ({ ...e, r: 4, color: "#9AA19C", opacity: 0.8, z: 2, title: `${e.date} ${e.place || ""}` })));
     mc.dots("cur", (evCur?.items || []).filter((e) => e.lat != null && (e.kind === "outbreak" || e.kind === "wild_detection"))
       .map((e) => ({ ...e, r: e.kind === "outbreak" ? 6 : 5, color: e.kind === "outbreak" ? "#B42318" : "#1D4ED8", opacity: 0.95, z: 5, title: `${e.date} ${e.place || ""}` })));
   }
   const mp = await mk("rp-map-pred");
+  base(mp);
   if (mp && okA) mp.dots("pred", assocPredDots(A.model.pred || []).dots);
   if (RP.maps.length) { rpStatus(t("rp.wait.tiles")); await rpSleep(3500); }
   if (token !== RP.token) return;
@@ -213,15 +246,20 @@ async function buildReport() {
 }
 
 // 표지의 '핵심 내용' — 각 분석의 결론 문장을 모은다
-function rpFindings(k, se, A) {
-  const out = [];
-  if (k.outbreaks != null) out.push(t("rp.f.kpi", { n: k.outbreaks, w: k.wild_detections ?? 0, d: k.season_start || "",
-    p: k.prev ? t("rp.f.prev", { n: k.prev.outbreaks ?? 0 }) : "" }));
-  if (se?.rows?.length) {
+function rpFindings(R, A) {
+  const out = [], k = R.kpi, se = R.seasons;
+  out.push(t("rp.f.kpi2", { s: R.label, n: k.outbreaks, w: k.wild_detections, g: k.sigungu, p: R.prev_label, pn: k.prev_same.outbreaks }));
+  if (se?.rows?.length && R.in_progress) {
     const cur = se.rows.find((r) => r.label === se.current), past = se.rows.filter((r) => r.label !== se.current);
     if (cur && past.length) {
       const avg = past.reduce((a, r) => a + (r.by_now || 0), 0) / past.length;
       out.push(t("rp.f.season", { s: se.current, n: cur.by_now, a: avg.toFixed(1), w: (se.now_week ?? 0) + 1 }));
+    }
+  } else if (se?.rows?.length) {
+    const row = se.rows.find((r) => r.label === R.label), past = se.rows.filter((r) => r.label !== R.label);
+    if (row && past.length) {
+      const avg = past.reduce((a, r) => a + (r.outbreaks || 0), 0) / past.length;
+      out.push(t("rp.f.season2", { s: R.label, n: row.outbreaks, a: avg.toFixed(1), pk: row.peak_date || "–", d: row.duration || 0 }));
     }
   }
   if (A?.model?.available) {
@@ -231,9 +269,9 @@ function rpFindings(k, se, A) {
     if (P.length) out.push(t("rp.f.pred", { l: P.slice(0, 3).map((r) => `${r.region}(×${xN(r.rel)})`).join(", ") }));
   }
   const firstVerdict = (html) => { const m = /<p class="as-verdict">([\s\S]*?)<\/p>/.exec(html || ""); return m ? rpStrip(m[1]) : ""; };
-  if (A?.wild?.available) { const s = firstVerdict(assocWildHTML(A.wild)); if (s) out.push(s); }
-  if (A?.temp?.available) { const s = firstVerdict(assocTempNote(A.temp)); if (s) out.push(s); }
-  if (A?.visits?.available) { const s = firstVerdict(assocVisitsHTML(A.visits, { noNow: true })); if (s) out.push(s); }
+  if (A?.wild?.available) { const x = firstVerdict(assocWildHTML(A.wild)); if (x) out.push(x); }
+  if (A?.temp?.available) { const x = firstVerdict(assocTempNote(A.temp)); if (x) out.push(x); }
+  if (A?.visits?.available) { const x = firstVerdict(assocVisitsHTML(A.visits, { noNow: true })); if (x) out.push(x); }
   return out;
 }
 
