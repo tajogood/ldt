@@ -686,14 +686,14 @@ def add_event(ev: EventIn):
 
 def _asset_ver() -> str:
     """화면 파일(js·css)이 바뀌면 값이 바뀜 → 브라우저가 예전 파일을 캐시에서 쓰지 않게 주소에 붙인다."""
-    return str(int(max((WEB_DIR / f).stat().st_mtime for f in ("app.js", "i18n.js", "style.css"))))
+    return str(int(max((WEB_DIR / f).stat().st_mtime for f in ("app.js", "i18n.js", "style.css", "report.js"))))
 
 
 @app.get("/")
 def index():
     v = _asset_ver()
     html = (WEB_DIR / "index.html").read_text(encoding="utf-8")
-    for f in ("app.js", "i18n.js", "style.css"):
+    for f in ("app.js", "i18n.js", "style.css", "report.js"):
         html = html.replace(f'/static/{f}"', f'/static/{f}?v={v}"')
     return HTMLResponse(html, headers={"Cache-Control": "no-cache"})
 

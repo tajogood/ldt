@@ -25,6 +25,7 @@
     <button data-view="news"><span data-i18n="nav.news">뉴스·공지</span> <b class="badge" id="news-badge" hidden></b></button>
     <button data-view="explore" data-i18n="nav.explore">데이터 조회</button>
     <button data-view="data" data-i18n="nav.data">데이터 관리</button>
+    <button data-view="report" data-i18n="nav.report">보고서</button>
   </nav>
   <div id="alert" class="alert" hidden></div>
   <div class="lang" role="group" aria-label="Language">
@@ -287,9 +288,23 @@
       </form>
     </div>
   </section>
+  <section id="view-report" class="view" hidden>
+    <div class="card rp-toolbar">
+      <div class="card-h"><h2 data-i18n="rp.h">분석 보고서 (PDF)</h2>
+        <span class="inline"><button class="small" id="rp-build" data-i18n="rp.rebuild">다시 만들기</button>
+        <button id="rp-pdf" class="primary" data-i18n="rp.pdf" disabled>PDF 다운로드</button></span></div>
+      <div class="pad">
+        <p class="muted small" data-i18n="rp.intro">지금 선택한 축종·질병으로 주요 분석을 A4 보고서로 모읍니다. 넣을 항목을 고른 뒤 'PDF 다운로드'를 누르고, 인쇄 창의 대상에서 'PDF로 저장'을 고르세요.</p>
+        <div class="layers" id="rp-sections"></div>
+        <p class="small" id="rp-status"></p>
+      </div>
+    </div>
+    <div class="rp-doc" id="rp-doc"></div>
+  </section>
 </main>
 <footer class="site-foot" id="site-foot"></footer>
 <script src="/static/app.js"></script>
+<script src="/static/report.js"></script>
   <!-- 공용 팝업 -->
   <div id="modal" class="modal" hidden>
     <div class="mbox" role="dialog" aria-modal="true" aria-labelledby="m-title">

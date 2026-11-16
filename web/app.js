@@ -807,47 +807,69 @@ const asReason = (x) => {
   return s;
 };
 
-async function drawAssocModel(M) {
-  if (!M.available) { $("#as-forest").innerHTML = `<p class="muted">${asReason(M)}</p>`; $("#as-models").innerHTML = ""; $("#as-pred").innerHTML = ""; $("#as-model-sum").textContent = ""; return; }
-  const best = M.models[M.best];
-  const fs = best.coef.map(asFactor);
+// 종합 모형 화면 조각(연관 분석 화면과 보고서가 같이 씀)
+const asPct = (p) => p >= 0.01 ? (p * 100).toFixed(1) + "%" : p >= 0.0001 ? (p * 100).toFixed(2) + "%" : "<0.01%";
+const asFac = (f) => f ? t("asf." + f) : "–";
+function assocModelVerdict(M) {
+  const fs = M.models[M.best].coef.map(asFactor);
   const up = fs.filter((f) => f.sig && f.v > 1).sort((a, b) => b.v - a.v);
   const down = fs.filter((f) => f.sig && f.v < 1);
   const none = fs.filter((f) => !f.sig);
-  const strip = (s) => s.replace(/<[^>]+>/g, "");
-  $("#as-forest").innerHTML = verdict(
+  const strip = (x) => x.replace(/<[^>]+>/g, "");
+  return { fs, up, html: verdict(
       (up.length ? t("as.v.up", { l: up.map((f) => `<b>${strip(f.label)}</b> ×${xN(f.v)}`).join(", ") }) : t("as.v.noup")) +
       (down.length ? " " + t("as.v.down", { l: down.map((f) => `${strip(f.label)} ×${xN(f.v)}`).join(", ") }) : "") +
-      (none.length ? `<br><span class="muted">${t("as.v.none", { l: none.map((f) => strip(f.label)).join(", ") })}</span>` : "")) +
-    forest(fs.map((f) => ({ ...f, tip: `×${xN(f.v)} (${rngTxt(f.lo, f.hi)})` }))) + legendLine();
-  const ev = best.oot || { auc: best.auc };
-  $("#as-model-sum").textContent = t("as.modelsum", { a: ev.auc ?? "–", s: best.oot ? best.oot.season : t("as.insample") });
-  $("#as-models").innerHTML = `<thead><tr><th>${t("as.m.model")}</th><th>${t("as.m.period")}</th><th>${t("as.m.units")}</th><th>${t("as.m.cases")}</th>
+      (none.length ? `<br><span class="muted">${t("as.v.none", { l: none.map((f) => strip(f.label)).join(", ") })}</span>` : "")) };
+}
+function assocForestHTML(M) {
+  const v = assocModelVerdict(M);
+  return v.html + forest(v.fs.map((f) => ({ ...f, tip: `×${xN(f.v)} (${rngTxt(f.lo, f.hi)})` }))) + legendLine();
+}
+function assocModelSum(M) {
+  const best = M.models[M.best], ev = best.oot || { auc: best.auc };
+  return t("as.modelsum", { a: ev.auc ?? "–", s: best.oot ? best.oot.season : t("as.insample") });
+}
+function assocModelsTable(M) {
+  return `<thead><tr><th>${t("as.m.model")}</th><th>${t("as.m.period")}</th><th>${t("as.m.units")}</th><th>${t("as.m.cases")}</th>
     <th data-tip="tip.as.auc">${t("as.m.auc")}</th><th data-tip="tip.as.oot">${t("as.m.oot")}</th></tr></thead><tbody>` +
     M.models.map((m, i) => `<tr${i === M.best ? ' class="on"' : ""}><td>${i === 0 ? t("as.m.base") : "+ " + m.features.slice(M.models[i - 1].features.length).map((f) => t("asf." + f)).join(", ")}</td>
       <td class="nowrap">${m.from.slice(0, 7)} ~ ${m.to.slice(0, 7)}</td><td>${fmtNum(m.units)}</td><td>${fmtNum(m.cases)}</td>
       <td>${m.auc ?? "–"}</td><td>${m.oot ? `${m.oot.auc} <span class="muted">${m.oot.season}</span>` : "–"}</td></tr>`).join("") + "</tbody>";
-  const P = M.pred || [];
-  const pct = (p) => p >= 0.01 ? (p * 100).toFixed(1) + "%" : p >= 0.0001 ? (p * 100).toFixed(2) + "%" : "<0.01%";
-  $("#as-pred-h").textContent = P.length ? t("as.predh", { w: M.week }) : t("as.nopred");
-  const fac = (f) => f ? t("asf." + f) : "–";
-  $("#as-pred").innerHTML = P.length ? `<thead><tr><th>${t("th.rank")}</th><th>${t("th.region")}</th><th data-tip="tip.as.p">${t("as.p")}</th>
+}
+function assocPredTable(P, n = 10) {
+  return P.length ? `<thead><tr><th>${t("th.rank")}</th><th>${t("th.region")}</th><th data-tip="tip.as.p">${t("as.p")}</th>
     <th data-tip="tip.as.rel">${t("as.rel")}</th><th>${t("as.topf")}</th></tr></thead><tbody>` +
-    P.slice(0, 10).map((r, i) => `<tr><td>${i + 1}</td><td><b>${esc(r.region)}</b></td><td>${pct(r.p)}</td><td>×${xN(r.rel)}</td><td>${fac(r.top)}</td></tr>`).join("") + "</tbody>" : "";
-  const m = S.maps.assoc ||= await makeMap($("#map-assoc"));
+    P.slice(0, n).map((r, i) => `<tr><td>${i + 1}</td><td><b>${esc(r.region)}</b></td><td>${asPct(r.p)}</td><td>×${xN(r.rel)}</td><td>${asFac(r.top)}</td></tr>`).join("") + "</tbody>" : "";
+}
+// 예측 지도: 점(평균 대비 배수로 크기·색) + 범례 HTML
+function assocPredDots(P) {
   const rels = P.map((r) => r.rel).sort((a, b) => a - b);
   const q = (p) => rels[Math.min(rels.length - 1, Math.floor(rels.length * p))] || 1;
   const cuts = [q(0.5), q(0.75), q(0.9)];
   const RAMP = ["#F2D98C", "#EDA100", "#E0611A", "#B42318"];
   const ci = (v) => cuts.filter((c) => v > c).length;
-  m.dots("pred", P.map((r) => ({ lat: r.lat, lon: r.lon, r: 4 + 9 * Math.sqrt(Math.min(r.rel, 6) / 6), color: RAMP[ci(r.rel)], opacity: 0.85, z: 3,
-    title: `${r.region} · ${t("as.p")} ${pct(r.p)} · ${t("as.rel")} ×${xN(r.rel)} · ${fac(r.top)}` })));
-  $("#as-pred-legend").innerHTML = P.length ? `<span class="muted small">${t("as.rel")}</span>` + RAMP.map((c, i) =>
-    `<span class="chip"><i style="background:${c}"></i>${i === 0 ? "≤×" + xN(cuts[0]) : i === 3 ? ">×" + xN(cuts[2]) : `×${xN(cuts[i - 1])}–${xN(cuts[i])}`}</span>`).join("") : "";
+  return { dots: P.map((r) => ({ lat: r.lat, lon: r.lon, r: 4 + 9 * Math.sqrt(Math.min(r.rel, 6) / 6), color: RAMP[ci(r.rel)], opacity: 0.85, z: 3,
+      title: `${r.region} · ${t("as.p")} ${asPct(r.p)} · ${t("as.rel")} ×${xN(r.rel)} · ${asFac(r.top)}` })),
+    legend: P.length ? `<span class="muted small">${t("as.rel")}</span>` + RAMP.map((c, i) =>
+      `<span class="chip"><i style="background:${c}"></i>${i === 0 ? "≤×" + xN(cuts[0]) : i === 3 ? ">×" + xN(cuts[2]) : `×${xN(cuts[i - 1])}–${xN(cuts[i])}`}</span>`).join("") : "" };
 }
 
-function drawAssocWild(W) {
-  if (!W.available) { $("#as-wild").innerHTML = `<p class="muted">${asReason(W)}</p>` + (W.reason === "few_wild" || W.reason === "no_wild" ? `<p class="small as-note">${t("as.wild.get")}</p>` : ""); return; }
+async function drawAssocModel(M) {
+  if (!M.available) { $("#as-forest").innerHTML = `<p class="muted">${asReason(M)}</p>`; $("#as-models").innerHTML = ""; $("#as-pred").innerHTML = ""; $("#as-model-sum").textContent = ""; return; }
+  $("#as-forest").innerHTML = assocForestHTML(M);
+  $("#as-model-sum").textContent = assocModelSum(M);
+  $("#as-models").innerHTML = assocModelsTable(M);
+  const P = M.pred || [];
+  $("#as-pred-h").textContent = P.length ? t("as.predh", { w: M.week }) : t("as.nopred");
+  $("#as-pred").innerHTML = assocPredTable(P);
+  const m = S.maps.assoc ||= await makeMap($("#map-assoc"));
+  const pd = assocPredDots(P);
+  m.dots("pred", pd.dots);
+  $("#as-pred-legend").innerHTML = pd.legend;
+}
+
+function assocWildHTML(W) {
+  if (!W.available) { return `<p class="muted">${asReason(W)}</p>` + (W.reason === "few_wild" || W.reason === "no_wild" ? `<p class="small as-note">${t("as.wild.get")}</p>` : ""); }
   const max = Math.max(2, ...W.grid.flatMap((g) => g.cells.map((c) => c.rr || 0)));
   const cell = (c) => {
     if (c.rr == null) return `<td class="muted" title="${t("as.few")}">–</td>`;
@@ -857,11 +879,13 @@ function drawAssocWild(W) {
       title="${t("as.cellTip", { rr: xN(c.rr), lo: xN(c.lo), hi: xN(c.hi), a: c.a, n1: fmtNum(c.n1), r1: c.rate1, r0: c.rate0 })}">×${xN(c.rr)}</td>`;
   };
   const best = W.grid.flatMap((g) => g.cells.map((c) => ({ ...c, km: g.km }))).filter((c) => c.sig && c.rr > 1).sort((a, b) => b.lo - a.lo)[0];   // 가장 확실한(하한이 큰) 칸
-  $("#as-wild").innerHTML = verdict(best ? t("as.wild.v", { km: best.km, lag: best.lag, rr: xN(best.rr), lo: xN(best.lo), hi: xN(best.hi) }) : t("as.wild.v0")) +
+  return verdict(best ? t("as.wild.v", { km: best.km, lag: best.lag, rr: xN(best.rr), lo: xN(best.lo), hi: xN(best.hi) }) : t("as.wild.v0")) +
     `<table class="heat as-grid"><thead><tr><th></th>${W.grid[0].cells.map((c) => `<th>${t("as.lagd", { d: c.lag })}</th>`).join("")}</tr></thead>
     <tbody>${W.grid.map((g) => `<tr><th>${t("as.within", { km: g.km })}</th>${g.cells.map(cell).join("")}</tr>`).join("")}</tbody></table>
     <p class="as-note muted small">${t("as.wildnote", { n: fmtNum(W.wild_events), u: fmtNum(W.units), c: fmtNum(W.cases) })}</p>`;
 }
+
+function drawAssocWild(W) { $("#as-wild").innerHTML = assocWildHTML(W); }
 
 // 기온 자료가 아직 없을 때: 서버가 발생 시기 기온을 받는 진행 상황을 바로 보여 주고, 다 받으면 다시 계산
 async function tempWait() {
@@ -887,23 +911,30 @@ async function tempWait() {
   if (b.running || !b.finished_at) S.wxPoll = setTimeout(tempWait, 5000);
 }
 
-function drawAssocTemp(T) {
-  if (!T.available) { clearChart("chart-as-temp"); $("#as-temp").innerHTML = asReason(T); if (T.reason === "no_weather") tempWait(); return; }
-  const lab = (b) => b.tmin <= -99 ? `${b.tmax}℃ ${t("as.below")}` : b.tmax >= 99 ? `${b.tmin}℃ ${t("as.above")}` : `${b.tmin}~${b.tmax}℃`;
+const tempLab = (b) => b.tmin <= -99 ? `${b.tmax}℃ ${t("as.below")}` : b.tmax >= 99 ? `${b.tmin}℃ ${t("as.above")}` : `${b.tmin}~${b.tmax}℃`;
+function tempChartCfg(T) {
   const bs = T.bins.filter((b) => b.units);
-  chart("chart-as-temp", { type: "bar", data: { labels: bs.map(lab), datasets: [{ label: t("as.rate"), data: bs.map((b) => b.rate1 ?? 0),
+  return { type: "bar", data: { labels: bs.map(tempLab), datasets: [{ label: t("as.rate"), data: bs.map((b) => b.rate1 ?? 0),
     backgroundColor: bs.map((b) => b.ref ? "#8A8F8C" : b.sig && b.rr > 1 ? "#B42318" : "#E8A39B") }] },
     options: { plugins: { legend: { display: false }, tooltip: { callbacks: { afterLabel: (c) => { const b = bs[c.dataIndex];
       return b.ref ? t("as.refband") : b.rr != null ? `${t("as.vsref")} ×${xN(b.rr)} (${rngTxt(b.lo, b.hi)}) · ${t("as.units", { u: fmtNum(b.units), c: b.cases })}` : t("as.few"); } } } },
-      scales: { y: { beginAtZero: true, title: { display: true, text: t("as.rate") } }, x: { title: { display: true, text: t("as.tempx") } } } } });
+      scales: { y: { beginAtZero: true, title: { display: true, text: t("as.rate") } }, x: { title: { display: true, text: t("as.tempx") } } } } };
+}
+function assocTempNote(T) {
+  const bs = T.bins.filter((b) => b.units);
   const ref = bs.find((b) => b.ref), top = bs.filter((b) => b.sig && b.rr > 1).sort((a, b) => b.rr - a.rr)[0];
   const c = T.coverage;
-  $("#as-temp").innerHTML = (top && ref ? verdict(t("as.temp.v", { a: lab(top), b: lab(ref), rr: xN(top.rr), lo: xN(top.lo), hi: xN(top.hi) })) : "") +
+  return (top && ref ? verdict(t("as.temp.v", { a: tempLab(top), b: tempLab(ref), rr: xN(top.rr), lo: xN(top.lo), hi: xN(top.hi) })) : "") +
     t("as.tempnote", { a: c?.from || "–", b: c?.to || "–", c: c?.cases ?? "–" });
 }
+function drawAssocTemp(T) {
+  if (!T.available) { clearChart("chart-as-temp"); $("#as-temp").innerHTML = asReason(T); if (T.reason === "no_weather") tempWait(); return; }
+  chart("chart-as-temp", tempChartCfg(T));
+  $("#as-temp").innerHTML = assocTempNote(T);
+}
 
-function drawAssocVisits(V) {
-  if (!V.available) { $("#as-visits").innerHTML = `<p class="small as-note">${t("as.li")}</p><p class="muted">${asReason(V)}</p>`; return; }
+function assocVisitsHTML(V, opt = {}) {
+  if (!V.available) { return `<p class="small as-note">${t("as.li")}</p><p class="muted">${asReason(V)}</p>`; }
   const VB = (q) => t("as.vb" + q);
   const rng = (d) => d.q === 0 ? t("as.v0") : d.vmax == null ? t("as.vmore", { a: fmtNum(d.vmin) }) : t("as.vrange", { a: fmtNum(d.vmin), b: fmtNum(d.vmax) });
   const ref = V.dose.filter((d) => d.ref), top = V.dose[V.dose.length - 1];
@@ -922,18 +953,20 @@ function drawAssocVisits(V) {
     (resp.length ? `<b>${t("as.resp")}</b>` + forest(resp.map((x) => ({ label: `${esc(x.vehicle)} <tspan class="m">${vth(x)}</tspan>`,
       v: x.or, lo: x.lo, hi: x.hi, sig: false }))) : "") + legendLine();
   const N = V.now;
-  if (N && N.rows.length) html += `<b>${t("as.now", { a: N.from, b: N.to })}</b><div class="scroll"><table class="tbl small"><thead><tr><th>${t("as.now.li")}</th>
+  if (N && N.rows.length && !opt.noNow) html += `<b>${t("as.now", { a: N.from, b: N.to })}</b><div class="scroll"><table class="tbl small"><thead><tr><th>${t("as.now.li")}</th>
       <th>${t("as.now.n")}</th><th>${t("as.now.grp")}</th><th>${t("as.now.veh")}</th></tr></thead><tbody>` +
     N.rows.map((r) => `<tr><td>${esc(r.address)}</td><td>${fmtNum(r.visits)}</td><td class="${r.group >= V.nbins - 1 ? "bad" : ""}">${VB(r.group)}</td><td>${r.top.map(esc).join(", ")}</td></tr>`).join("") + "</tbody></table></div>";
   html += `<p class="as-note muted small">${t("as.visitnote", { a: V.coverage.from, b: V.coverage.to, w: V.coverage.weeks, c: V.cases, k: fmtNum(V.ctrls) })}</p>`;
-  $("#as-visits").innerHTML = html;
+  return html;
 }
 
-function drawAssocDensity(D) {
-  if (!D.available) { $("#as-density").innerHTML = `<p class="muted">${asReason(D)}</p>`; return; }
+function drawAssocVisits(V) { $("#as-visits").innerHTML = assocVisitsHTML(V); }
+
+function assocDensityHTML(D, opt = {}) {
+  if (!D.available) { return `<p class="muted">${asReason(D)}</p>`; }
   const fmtv = (f, v) => v == null ? "–" : f === "duck_share" ? `${Math.round(v * 100)}%` : fmtNum(Math.round(v));
   const unit = (f) => t("asu." + f);
-  $("#as-density").innerHTML = D.factors.map((F) => {
+  return D.factors.map((F) => {
     const top = F.rows[F.top_q - 1], r1 = F.rows[0];
     const range = (r) => `${fmtv(F.factor, r.vmin)}~${fmtv(F.factor, r.vmax)}${unit(F.factor)}`;
     const v = top.sig && top.rr > 1
@@ -943,7 +976,12 @@ function drawAssocDensity(D) {
       label: `${range(r)} <tspan class="m">${QL(r.q)}</tspan>`, v: r.rr, lo: r.q === 1 ? null : r.lo, hi: r.q === 1 ? null : r.hi, sig: r.sig, ref: r.q === 1,
       tip: `${t("as.regions", { n: r.regions })} · ${t("as.units", { u: fmtNum(r.units), c: r.cases })}` }))) +
       (top.sig && top.rr > 1 ? `<p class="small as-note">${t("as.dens.list", { q: QL(F.top_q), n: F.top_n })} ${F.top_regions.map(esc).join(", ")}${F.top_n > F.top_regions.length ? " …" : ""}</p>` : "");
-  }).join("") + `<p class="small as-note">${t("as.clickband")}</p>` + legendLine() + `<p class="as-note muted small">${t("as.densnote")}</p>`;
+  }).join("") + (opt.print ? "" : `<p class="small as-note">${t("as.clickband")}</p>`) + legendLine() + `<p class="as-note muted small">${t("as.densnote")}</p>`;
+}
+
+function drawAssocDensity(D) {
+  $("#as-density").innerHTML = assocDensityHTML(D);
+  if (!D.available) return;
   S.densF = D.factors;
   $("#as-density").querySelectorAll(".frow").forEach((g) => g.onclick = () => {
     const [f, q] = g.dataset.key.split("|");
@@ -998,21 +1036,27 @@ async function openRegion(m, back) {
 }
 
 
-function drawAssocBirds(B) {
-  if (!B.available) { clearChart("chart-as-birds"); $("#as-birds").innerHTML = `<p class="muted">${asReason(B)}</p>`; return; }
+function birdsChartCfg(B) {
   const wk = B.weeks.map((w) => { const d = new Date(Date.UTC(2026, 0, 1 + w * 7)); return `${d.getUTCMonth() + 1}/${d.getUTCDate()}`; });
-  chart("chart-as-birds", { type: "bar", data: { labels: wk, datasets: [
+  return { type: "bar", data: { labels: wk, datasets: [
     { type: "bar", label: t("as.b.ob"), data: B.outbreaks, backgroundColor: "#B42318", yAxisID: "y" },
     { type: "line", label: t("as.b.dep"), data: B.departs, borderColor: "#1D4ED8", backgroundColor: "#1D4ED8", pointRadius: 2, yAxisID: "y1" }] },
     options: { scales: { y: { beginAtZero: true, title: { display: true, text: t("as.b.ob") } },
-      y1: { beginAtZero: true, position: "right", grid: { drawOnChartArea: false }, title: { display: true, text: t("as.b.dep") } } } } });
+      y1: { beginAtZero: true, position: "right", grid: { drawOnChartArea: false }, title: { display: true, text: t("as.b.dep") } } } } };
+}
+function assocBirdsHTML(B) {
   const dd = (v) => v < 0 ? t("as.b.before", { d: -v }) : t("as.b.after2", { d: v });
-  $("#as-birds").innerHTML = (B.lag_median != null ? verdict(t("as.b.sum", { m: dd(B.lag_median), a: dd(B.lag_range[0]), b: dd(B.lag_range[1]) })) : "") +
+  return (B.lag_median != null ? verdict(t("as.b.sum", { m: dd(B.lag_median), a: dd(B.lag_range[0]), b: dd(B.lag_range[1]) })) : "") +
     `<table class="tbl small"><thead><tr><th>${t("as.b.season")}</th><th>${t("as.b.tracks")}</th><th>${t("as.b.med")}</th>
     <th>${t("as.b.p90")}</th><th data-tip="tip.as.lag">${t("as.b.lag")}</th><th>${t("as.b.after")}</th></tr></thead><tbody>` +
     B.rows.map((r) => `<tr><td>${r.season}</td><td>${r.tracks}</td><td>${r.depart_median.slice(5)}</td><td>${r.p90 ? r.p90.slice(5) : "–"}</td>
       <td>${r.lag_p90 == null ? "–" : dd(r.lag_p90)}</td><td>${r.after_median}/${r.outbreaks}</td></tr>`).join("") + "</tbody></table>" +
     `<p class="as-note muted small">${t("as.b.note")}</p>`;
+}
+function drawAssocBirds(B) {
+  if (!B.available) { clearChart("chart-as-birds"); $("#as-birds").innerHTML = `<p class="muted">${asReason(B)}</p>`; return; }
+  chart("chart-as-birds", birdsChartCfg(B));
+  $("#as-birds").innerHTML = assocBirdsHTML(B);
 }
 
 function drawWx(rowsAll) {
@@ -1541,7 +1585,7 @@ $("#xp-reset").onclick = () => { Object.assign(XP, { filters: {}, q: "", from: "
 async function refresh() {
   renderSpeciesTabs();
   try {
-    await Promise.all([({ dash: viewDash, track: viewTrack, corr: viewCorr, hist: viewHist, news: viewNews, explore: viewExplore, data: viewData })[S.view](), lastCollect()]);
+    await Promise.all([({ dash: viewDash, track: viewTrack, corr: viewCorr, hist: viewHist, news: viewNews, explore: viewExplore, data: viewData, report: () => window.viewReport?.() })[S.view](), lastCollect()]);
     Object.values(S.maps).forEach((m) => m.relayout());
   } catch (e) { console.error(e); }
 }

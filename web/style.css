@@ -265,3 +265,48 @@ table.tbl.small{font-size:12px}
 .site-foot .ft-op{color:var(--ink)} .site-foot .sep{margin:0 8px;color:var(--line)}
 .site-foot a{color:inherit}
 .site-foot .ft-copy{margin-top:8px}
+
+/* ── 보고서(A4) — 화면에서는 종이처럼 미리보기, 인쇄(PDF)에서는 보고서만 ─────────── */
+button.primary:disabled{opacity:.45;cursor:default}
+.rp-toolbar{margin-bottom:16px}
+.rp-doc{display:flex;flex-direction:column;align-items:center;gap:20px;padding:4px 0 24px}
+.rp-doc, .rp-doc *{--bg:#fff; --card:#fff; --ink:#17201B; --muted:#56605A; --line:#DADDD6; --soft:#EEF0EC; --teal:#0E5A55; --red:#B42318; --blue:#1D4ED8}
+.rp-page{width:794px;min-height:1123px;background:#fff;color:#17201B;padding:44px 46px 40px;box-shadow:0 2px 14px rgba(0,0,0,.18);border-radius:2px;font-size:12.5px;line-height:1.55}
+.rp-hd{display:flex;justify-content:space-between;font-size:10.5px;color:#56605A;border-bottom:1px solid #DADDD6;padding-bottom:6px;margin-bottom:16px}
+.rp-h{font-size:19px;margin:0 0 6px;color:#0E5A55}
+.rp-page h3{font-size:14px;margin:18px 0 6px}
+.rp-sub{color:#56605A;margin:0 0 10px;font-size:11.5px}
+.rp-cover h1{font-size:30px;margin:120px 0 10px;color:#0E5A55}
+.rp-cover .rp-meta{font-size:15px;color:#56605A;margin:0 0 30px}
+.rp-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin:0 0 18px}
+.rp-kpi{border:1px solid #DADDD6;border-radius:8px;padding:10px 12px;display:flex;flex-direction:column;gap:2px}
+.rp-kpi span{font-size:11px;color:#56605A}.rp-kpi b{font-size:24px}.rp-kpi small{font-size:10px;color:#56605A}
+.rp-find{margin:0;padding-left:18px}.rp-find li{margin:3px 0}
+.rp-toc{margin:0;padding-left:20px;color:#56605A}
+.rp-alert{margin-top:18px;padding:8px 10px;border-radius:6px;background:#FDECEA;color:#B42318;font-weight:600}
+.rp-map{width:700px;height:540px;border:1px solid #DADDD6;border-radius:4px;margin:4px 0 6px}
+.rp-map .leaflet-control-layers,.rp-map .leaflet-control-zoom{display:none}
+.rp-legend{font-size:11px;color:#56605A;margin:0 0 10px;display:flex;flex-wrap:wrap;gap:4px 12px;align-items:center}
+.rp-legend i{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:4px;vertical-align:-1px}
+.rp-chart{width:700px;height:300px;margin:4px 0 10px}
+.rp-chart canvas{width:700px !important;height:300px !important}
+.rp-img{width:700px;height:300px;display:block;margin:4px 0 10px}
+.rp-tbl{width:100%;margin:6px 0 10px}
+.rp-page .tbl th,.rp-page .tbl td{padding:4px 6px}
+.rp-page .as-verdict{background:#EEF0EC;color:#17201B}
+.rp-page table.heat td,.rp-page table.heat th{font-size:10.5px;padding:3px 4px}
+.rp-page .scroll{max-height:none;overflow:visible}
+
+@media print{
+  @page{size:A4;margin:10mm 12mm}
+  html,body{background:#fff !important}
+  body.printing-report > *:not(main), body.printing-report main > *:not(#view-report), body.printing-report .rp-toolbar,
+  body.printing-report #site-foot, body.printing-report #tip{display:none !important}
+  body.printing-report main{padding:0;margin:0;max-width:none}
+  body.printing-report #view-report{display:block !important}
+  body.printing-report .rp-doc{display:block;padding:0;gap:0}
+  body.printing-report .rp-page{width:auto;min-height:0;box-shadow:none;border-radius:0;padding:0;break-after:page;page-break-after:always}
+  body.printing-report .rp-page:last-child{break-after:auto;page-break-after:auto}
+  body.printing-report *{-webkit-print-color-adjust:exact;print-color-adjust:exact}
+  body.printing-report tr,body.printing-report .rp-map,body.printing-report .rp-img,body.printing-report svg.forest{break-inside:avoid}
+}
