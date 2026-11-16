@@ -282,7 +282,9 @@ def publish(today: date | None = None) -> dict:
     state["running"] = True
     try:
         src = generate(today)
-        res = {"date": today.isoformat(), "file": str(src), "pushed": False}
+        res = {"date": today.isoformat(), "file": str(src), "pushed": False, "pages_dir": PAGES_DIR or None}
+        if not PAGES_DIR:
+            res["reason"] = ".env 에 DAILY_PAGES_DIR 가 없어(또는 서버를 다시 켜지 않아) 서버 안에만 만들었습니다"
         if PAGES_DIR:
             pd = Path(PAGES_DIR)
             if not (pd / ".git").exists():
@@ -302,6 +304,8 @@ def publish(today: date | None = None) -> dict:
                 _git("commit", "-q", "-m", f"오늘의 가축질병 현황 {today.isoformat()}")
                 _git("push", "-q")
                 res["pushed"] = True
+            else:
+                res["reason"] = "올린 내용과 바뀐 것이 없습니다"
         state["last"] = {**res, "at": datetime.now().strftime("%Y-%m-%d %H:%M")}
         state["error"] = None
         print(f"[오늘 현황] {res}", flush=True)
