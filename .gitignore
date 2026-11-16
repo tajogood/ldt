@@ -12,3 +12,4 @@ data/raw/
 data/logs/
 *.dump
 *.tar.gz
+data/daily/

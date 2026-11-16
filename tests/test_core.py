@@ -711,3 +711,22 @@ def test_report_build_and_auto_archive():
     assert report.tick(now) == []
     lst = report.listing("poultry")
     assert lst and report.get(lst[0]["id"])["snapshot"]["kind"] in ("weekly", "final")
+
+
+def test_daily_page_publish(tmp_path, monkeypatch):
+    """오늘의 현황 페이지: 만들고(HTML 한 파일) 공개 저장소 폴더에 커밋·푸시."""
+    import subprocess
+    from app import daily
+    remote, pages = tmp_path / "remote.git", tmp_path / "pages"
+    subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+    subprocess.run(["git", "clone", "-q", str(remote), str(pages)], check=True, capture_output=True)
+    for k, v in (("user.email", "t@t"), ("user.name", "t")):
+        subprocess.run(["git", "-C", str(pages), "config", k, v], check=True)
+    monkeypatch.setattr(daily, "PAGES_DIR", str(pages))
+    monkeypatch.setattr(daily, "OUT_DIR", tmp_path / "out")
+    r = daily.publish()
+    assert r["pushed"]
+    html_ = (pages / "index.html").read_text(encoding="utf-8")
+    assert "오늘의 가축질병 현황" in html_ and "const D = {" in html_ and "FARM_NM" not in html_
+    files = subprocess.run(["git", "-C", str(remote), "ls-tree", "-r", "--name-only", "HEAD"], capture_output=True, text=True).stdout
+    assert "index.html" in files and f"archive/{r['date']}.html" in files

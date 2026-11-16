@@ -14,7 +14,7 @@ from fastapi.responses import FileResponse, HTMLResponse, PlainTextResponse, Str
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from . import analysis, assoc, birds, collect, db, explore, freshness, history, news, report, scheduler, wild
+from . import analysis, assoc, birds, collect, daily, db, explore, freshness, history, news, report, scheduler, wild
 from . import weather as weather_bf      # 과거 기온 백필(아래 /api/weather 함수 이름과 겹치지 않게)
 from .settings import VWORLD_KEY, WEB_DIR
 from .species import SPECIES, disease_code
@@ -43,6 +43,7 @@ def _start_auto_collect():
     print("앱 준비 완료", flush=True)
     scheduler.start()
     news.start()      # 뉴스 5분 · 공지 30분마다(NEWS_MONITOR=0 이면 꺼짐)
+    daily.start()        # 오늘의 현황 페이지(매일 08:00, GitHub Pages)
     report.start()       # 보고서 자동 보관(매주 월 05:00 · 시즌 끝)
     weather_bf.start()   # 과거 발생 시기 기온만 골라 받기(연관 분석용, WEATHER_BACKFILL=0 이면 꺼짐)
     import threading
@@ -252,6 +253,29 @@ def weather_backfill():
 @app.post("/api/weather/backfill")
 def weather_backfill_now():
     return weather_bf.start_now()
+
+
+@app.get("/daily")
+def daily_page(refresh: int = 0):
+    """오늘의 현황 한 장 미리보기(없거나 refresh=1 이면 새로 만듦)."""
+    f = daily.OUT_DIR / "index.html"
+    if refresh or not f.exists():
+        f = daily.generate()
+    return HTMLResponse(f.read_text(encoding="utf-8"), headers={"Cache-Control": "no-cache"})
+
+
+@app.get("/api/daily")
+def daily_status():
+    return daily.status()
+
+
+@app.post("/api/daily/publish")
+def daily_publish():
+    """지금 바로 만들어 올리기(DAILY_PAGES_DIR 가 있으면 git push)."""
+    try:
+        return daily.publish()
+    except Exception as e:
+        raise HTTPException(500, str(e)[:300])
 
 
 @app.get("/api/report/seasons")
